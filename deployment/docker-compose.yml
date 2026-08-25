@@ -1,0 +1,58 @@
+# Smoke topology: 1 SuperLink + 3 SuperNodes (scenario 1's 27-client manifest, 3-of-27 subset,
+# same scoping as tests/deployment/test_deployment_smoke.py). Each service gets its own network
+# namespace, so unlike co-located native processes, no --clientappio-api-address collision. Insecure
+# profile only -- add ssl-* flags + cert volume mounts for a tls variant if a real deployment needs it.
+services:
+  superlink:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    command: >
+      flower-superlink --insecure
+      --fleet-api-address 0.0.0.0:9092
+      --control-api-address 0.0.0.0:9093
+      --serverappio-api-address 0.0.0.0:9091
+    ports:
+      - "9093:9093"
+
+  supernode-0:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    depends_on:
+      - superlink
+    command: >
+      flower-supernode --insecure
+      --superlink superlink:9092
+      --clientappio-api-address 0.0.0.0:9094
+      --node-config "partition-id=0 num-partitions=27"
+    volumes:
+      - ../artifacts/data:/app/artifacts/data:ro
+
+  supernode-1:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    depends_on:
+      - superlink
+    command: >
+      flower-supernode --insecure
+      --superlink superlink:9092
+      --clientappio-api-address 0.0.0.0:9094
+      --node-config "partition-id=1 num-partitions=27"
+    volumes:
+      - ../artifacts/data:/app/artifacts/data:ro
+
+  supernode-2:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    depends_on:
+      - superlink
+    command: >
+      flower-supernode --insecure
+      --superlink superlink:9092
+      --clientappio-api-address 0.0.0.0:9094
+      --node-config "partition-id=2 num-partitions=27"
+    volumes:
+      - ../artifacts/data:/app/artifacts/data:ro

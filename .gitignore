@@ -1,0 +1,12 @@
+/data/
+artifacts/
+*.pdf
+.DS_Store
+__pycache__/
+.venv/
+deployment/certs/*.crt
+deployment/certs/*.key
+deployment/certs/*.pem
+deployment/generated/
+.venv
+.venv/

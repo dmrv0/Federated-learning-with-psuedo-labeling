@@ -1,0 +1,235 @@
+# Paper-scale experiment matrix (run_kind=paper via base_profile: paper), driven by
+# `python -m ssfl.experiments.run_suite --matrix configs/experiments.yaml [--resume]`.
+# See SSFL_IMPLEMENTATION_PLAN.md Milestone M7 ("Paper Experiments") for the spec each section
+# below implements. Every entry's `overrides` layers on top of `configs/paper.yaml`; `name` becomes
+# the generated profile (artifacts/generated_configs/<name>.yaml) and the run-directory identity.
+#
+# Figures 4-6 in the paper show every scenario, so every ablation, threshold, and label-
+# representation condition is explicitly repeated for scenarios 1, 2, and 3. Deliberate overlap
+# between studies is kept as a separate named run so each paper figure can be rebuilt independently.
+
+entries:
+  # --- Main matrix: 6 method/backbone combos x 3 scenarios -----------------
+  - name: fl_cnn_s1
+    base_profile: paper
+    overrides: {algorithm: fl, backbone: cnn, scenario: 1}
+  - name: fd_cnn_s1
+    base_profile: paper
+    overrides: {algorithm: fd, backbone: cnn, scenario: 1}
+  - name: dsfl_cnn_s1
+    base_profile: paper
+    overrides: {algorithm: dsfl, backbone: cnn, scenario: 1}
+  - name: ssfl_cnn_s1
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: cnn, scenario: 1}
+  - name: ssfl_mlp_s1
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: mlp, scenario: 1}
+  - name: ssfl_lstm_s1
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: lstm, scenario: 1}
+
+  - name: fl_cnn_s2
+    base_profile: paper
+    overrides: {algorithm: fl, backbone: cnn, scenario: 2}
+  - name: fd_cnn_s2
+    base_profile: paper
+    overrides: {algorithm: fd, backbone: cnn, scenario: 2}
+  - name: dsfl_cnn_s2
+    base_profile: paper
+    overrides: {algorithm: dsfl, backbone: cnn, scenario: 2}
+  - name: ssfl_cnn_s2
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: cnn, scenario: 2}
+  - name: ssfl_mlp_s2
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: mlp, scenario: 2}
+  - name: ssfl_lstm_s2
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: lstm, scenario: 2}
+
+  - name: fl_cnn_s3
+    base_profile: paper
+    overrides: {algorithm: fl, backbone: cnn, scenario: 3}
+  - name: fd_cnn_s3
+    base_profile: paper
+    overrides: {algorithm: fd, backbone: cnn, scenario: 3}
+  - name: dsfl_cnn_s3
+    base_profile: paper
+    overrides: {algorithm: dsfl, backbone: cnn, scenario: 3}
+  - name: ssfl_cnn_s3
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: cnn, scenario: 3}
+  - name: ssfl_mlp_s3
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: mlp, scenario: 3}
+  - name: ssfl_lstm_s3
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: lstm, scenario: 3}
+
+  # --- Ablations (all scenarios) --------------------------------------------
+  - name: ablation_full_s1
+    base_profile: paper
+    overrides:
+      ssfl_discriminator_mode: enabled
+      ssfl_voting_mode: enabled
+      ssfl_label_representation: hard
+  - name: ablation_no_discriminator_s1
+    base_profile: paper
+    overrides:
+      ssfl_discriminator_mode: disabled
+      ssfl_voting_mode: enabled
+      ssfl_label_representation: hard
+  - name: ablation_no_voting_s1
+    base_profile: paper
+    overrides:
+      ssfl_discriminator_mode: enabled
+      ssfl_voting_mode: disabled
+      ssfl_label_representation: soft
+      ssfl_soft_label_round_decimals: 4
+  - name: ablation_no_discriminator_or_voting_s1
+    base_profile: paper
+    overrides:
+      ssfl_discriminator_mode: disabled
+      ssfl_voting_mode: disabled
+      ssfl_label_representation: soft
+      ssfl_soft_label_round_decimals: 4
+  - name: ablation_simple_filter_s1
+    base_profile: paper
+    overrides:
+      ssfl_discriminator_mode: simple_filter
+      ssfl_voting_mode: enabled
+      ssfl_label_representation: hard
+
+  - name: ablation_full_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_discriminator_mode: enabled, ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+  - name: ablation_no_discriminator_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_discriminator_mode: disabled, ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+  - name: ablation_no_voting_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_discriminator_mode: enabled, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 4}
+  - name: ablation_no_discriminator_or_voting_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_discriminator_mode: disabled, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 4}
+  - name: ablation_simple_filter_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_discriminator_mode: simple_filter, ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+
+  - name: ablation_full_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_discriminator_mode: enabled, ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+  - name: ablation_no_discriminator_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_discriminator_mode: disabled, ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+  - name: ablation_no_voting_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_discriminator_mode: enabled, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 4}
+  - name: ablation_no_discriminator_or_voting_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_discriminator_mode: disabled, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 4}
+  - name: ablation_simple_filter_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_discriminator_mode: simple_filter, ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+
+  # --- Threshold study (all scenarios, discriminator enabled, hard+voting) --
+  - name: threshold_0_7_s1
+    base_profile: paper
+    overrides: {ssfl_threshold_policy: fixed_0_7}
+  - name: threshold_0_8_s1
+    base_profile: paper
+    overrides: {ssfl_threshold_policy: fixed_0_8}
+  - name: threshold_0_9_s1
+    base_profile: paper
+    overrides: {ssfl_threshold_policy: fixed_0_9}
+  - name: threshold_median_s1
+    base_profile: paper
+    overrides: {ssfl_threshold_policy: median}
+
+  - name: threshold_0_7_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_threshold_policy: fixed_0_7}
+  - name: threshold_0_8_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_threshold_policy: fixed_0_8}
+  - name: threshold_0_9_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_threshold_policy: fixed_0_9}
+  - name: threshold_median_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_threshold_policy: median}
+
+  - name: threshold_0_7_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_threshold_policy: fixed_0_7}
+  - name: threshold_0_8_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_threshold_policy: fixed_0_8}
+  - name: threshold_0_9_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_threshold_policy: fixed_0_9}
+  - name: threshold_median_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_threshold_policy: median}
+
+  # --- Label representation study (all scenarios) ---------------------------
+  - name: label_hard_s1
+    base_profile: paper
+    overrides: {ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+  - name: label_soft_2dp_s1
+    base_profile: paper
+    overrides:
+      ssfl_voting_mode: disabled
+      ssfl_label_representation: soft
+      ssfl_soft_label_round_decimals: 2
+  - name: label_soft_4dp_s1
+    base_profile: paper
+    overrides:
+      ssfl_voting_mode: disabled
+      ssfl_label_representation: soft
+      ssfl_soft_label_round_decimals: 4
+  - name: label_soft_6dp_s1
+    base_profile: paper
+    overrides:
+      ssfl_voting_mode: disabled
+      ssfl_label_representation: soft
+      ssfl_soft_label_round_decimals: 6
+  - name: label_soft_8dp_s1
+    base_profile: paper
+    overrides:
+      ssfl_voting_mode: disabled
+      ssfl_label_representation: soft
+      ssfl_soft_label_round_decimals: 8
+
+  - name: label_hard_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+  - name: label_soft_2dp_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 2}
+  - name: label_soft_4dp_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 4}
+  - name: label_soft_6dp_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 6}
+  - name: label_soft_8dp_s2
+    base_profile: paper
+    overrides: {scenario: 2, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 8}
+
+  - name: label_hard_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_voting_mode: enabled, ssfl_label_representation: hard}
+  - name: label_soft_2dp_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 2}
+  - name: label_soft_4dp_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 4}
+  - name: label_soft_6dp_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 6}
+  - name: label_soft_8dp_s3
+    base_profile: paper
+    overrides: {scenario: 3, ssfl_voting_mode: disabled, ssfl_label_representation: soft, ssfl_soft_label_round_decimals: 8}

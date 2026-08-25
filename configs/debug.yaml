@@ -1,0 +1,37 @@
+# Single-process execution with extra assertions, for interactive debugging of protocol logic
+# without Ray's process isolation obscuring a stack trace. Not a performance or paper-fidelity
+# profile.
+profile: debug
+run_kind: extension
+algorithm: ssfl
+backbone: cnn
+scenario: 1
+seed: 2023
+
+data_path: artifacts/data
+output_path: artifacts/runs
+
+num_server_rounds: 2
+local_epochs: 1
+batch_size: 8
+paper_text_batch: false
+learning_rate: 1.0e-4
+device: cpu
+deterministic: true
+
+ssfl_threshold_policy: median
+ssfl_discriminator_mode: enabled
+ssfl_voting_mode: enabled
+ssfl_label_representation: hard
+ssfl_soft_label_round_decimals: null
+
+dsfl_temperature: 0.1
+
+checkpoint_interval: 1
+checkpoint_rounds: [1, 2]
+logging_interval: 1
+log_every_batch: true
+
+client_num_cpus: 1.0
+client_num_gpus: 0.0
+max_concurrent_clients: 1

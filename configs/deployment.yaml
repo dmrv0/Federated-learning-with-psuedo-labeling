@@ -1,0 +1,37 @@
+# Real network (Deployment Runtime) profile: same learning settings as paper.yaml, run against
+# separately-launched SuperLink/SuperNode processes instead of the Ray simulation backend. See
+# deployment/ for generated launch configs and TLS/insecure-dev profiles.
+profile: deployment
+run_kind: paper
+algorithm: ssfl
+backbone: cnn
+scenario: 1
+seed: 2023
+
+data_path: artifacts/data
+output_path: artifacts/runs
+
+num_server_rounds: 200
+local_epochs: 5
+batch_size: 80
+paper_text_batch: false
+learning_rate: 1.0e-4
+device: auto
+deterministic: true
+
+ssfl_threshold_policy: median
+ssfl_discriminator_mode: enabled
+ssfl_voting_mode: enabled
+ssfl_label_representation: hard
+ssfl_soft_label_round_decimals: null
+
+dsfl_temperature: 0.1
+
+checkpoint_interval: 10
+checkpoint_rounds: [10, 50, 100, 150, 200]
+logging_interval: 1
+log_every_batch: false
+
+client_num_cpus: 1.0
+client_num_gpus: 0.0
+max_concurrent_clients: 8

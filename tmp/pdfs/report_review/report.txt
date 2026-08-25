@@ -1,0 +1,2078 @@
+Reproducing Semisupervised Federated Learning for
+             IoT Intrusion Detection
+
+
+     An independent analysis of three completed SSFL runs on mini-N-BaIoT
+
+ against Zhao et al., IEEE Internet of Things Journal 10(10):8645-8655, May 2023
+
+  Runs executed 2026-07-23/24 on an NVIDIA RTX 3090, commit 78df829dd1ce
+
+Analysis generated 2026-07-25 by scripts/build report.py – one run per scenario; no
+                          statistical significance implied
+SSFL reproduction report                                                                                          1
+
+
+
+Contents
+
+2 Executive summary                                                                                               3
+
+3 Research question and scope                                                                                     4
+
+4 Paper and method overview                                                                                       4
+
+5 Reproduction environment                                                                                        4
+
+6 Dataset and partitioning                                                                                        5
+
+7 Resolved experimental configuration                                                                             5
+
+8 Artifact-integrity audit                                                                                        7
+
+9 Overall results                                                                                                 9
+
+10 Table II comparison (final metrics)                                                                           13
+
+11 Table III convergence comparison                                                                              15
+
+12 Table IV communication comparison                                                                             17
+
+13 Scenario 1 analysis (label-sorted shards, 27 clients)                                                         19
+
+14 Scenario 2 analysis (one client per device-class subset, 89 clients)                                          19
+
+15 Scenario 3 analysis (Dirichlet alpha = 0.1, 89 clients)                                                       19
+
+16 Per-class and confusion-matrix analysis                                                                       20
+
+17 TCP/UDP class-collapse investigation                                                                          22
+
+18 Pseudo-label consensus analysis                                                                               26
+
+19 Loss and calibration discussion                                                                               27
+
+20 Communication-efficiency analysis                                                                             31
+
+21 Runtime and GPU analysis                                                                                      33
+
+22 Deviations and reproducibility warnings                                                                       37
+
+23 Threats to validity                                                                                           38
+
+24 Conclusions                                                                                                   38
+
+25 Recommended next experiments                                                                                  38
+
+26 Appendix                                                                                                      39
+   26.1 A.1 Full resolved configurations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   39
+   26.2 A.2 Complete metric tables . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     41
+   26.3 A.3 Artifact inventory . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   41
+SSFL reproduction report                                                                                        2
+
+
+
+   26.4 A.4 Formulas and units . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   41
+   26.5 A.5 Code and version metadata . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    42
+SSFL reproduction report                                                                                                                                                                                                    3
+
+
+
+2. Executive summary
+
+This report is an independent, analysis-only audit of three completed SSFL (semisupervised federated learn-
+ing) runs – one per non-IID scenario of the mini-N-BaIoT intrusion-detection benchmark – transferred from
+an NVIDIA RTX 3090 machine, compared against the results published by Zhao et al. in the IEEE Internet of
+Things Journal (vol. 10, no. 10, May 2023, pp. 8645-8655). No training was rerun and no transferred artifact
+was modified; every number below was recomputed from the transferred metrics, telemetry and configuration
+records.
+Headline outcome. The reproduction is close to the paper on final accuracy: round-200 accuracy is 87.92%
+/ 83.69% / 83.76% for scenarios 1-3 against the paper’s 87.40% / 86.70% / 84.22%, a difference of +0.52 /
+-3.01 / -0.46 percentage points. Macro F1 lands within -0.61 / -3.95 / -0.79 percentage points of Table II.
+Convergence is slower than the paper’s Table III at every intermediate milestone, with the gap closing only
+in the last quarter of training.
+Principal finding. In all three scenarios the pseudo-label consensus mechanism permanently merges the
+two gafgyt flooding classes (gafgyt.tcp and gafgyt.udp) within the first ten rounds: the federation’s global
+pseudo-labels assign essentially all open-set samples of both classes to a single surviving class, so one of the
+two ends the run with recall 0.00. Scored with the merged pair treated as one class, final accuracy would be
+98.02% / 93.80% / 93.88% – the single largest quality loss in the reproduction, and the main driver of the
+macro-precision gap versus the paper (Section 17).
+Secondary findings. Scenario 3’s test loss diverges (final 27.02, about 16x its round-13 minimum) while
+its accuracy is stable – a growing-overconfidence signature, not a performance failure (Section 19). Commu-
+nication matches the protocol contract exactly (8,900 uplink bytes per client per round); under the paper’s
+own accounting convention the cumulative cost is 1.78 MB at round 200 versus the 0.47-0.55 MB the paper
+reports at its top-accuracy rounds (Section 12). The artifact-integrity audit passed 32 of 45 checks with 13
+warnings and no failures (Section 8). All results rest on one seed per scenario; no statistical significance is
+claimed anywhere in this report.
+
+                                                                 SSFL reproduction on mini-N-BaIoT: summary
+
+                                                                 Final-round detection performance: paper vs. reproduction
+                                                                                              Zhao et al. (Table II)                  Reproduced (round 200)
+
+
+              100                                                92.3                                                                      91.7
+                                   87.9                                                                                                                                                                  90.2
+                            87.4              86.5        85.9                                  86.7
+                                                                            84.4                        83.7       85.0                                          84.2        83.8
+                                                                                                                               81.0                                                   82.5        81.7          80.8
+                                                                                                                                                  79.5
+                   80
+
+ Percent           60
+
+                   40
+
+                   20
+
+                   0
+                                S1                   S1                S1                           S2                    S2                   S2                        S3                  S3             S3
+                               Acc.                  F1               Prec.                        Acc.                   F1                  Prec.                     Acc.                 F1            Prec.
+
+
+
+                                   Convergence                                                         Cost of the TCP/UDP collapse                                                 Communication efficiency
+                                                                                                                 11-class macro F1
+                   80                                                                                            TCP/UDP pair merged                                    80
+                                                                                        100
+
+
+
+
+    Accuracy (%)                                                         Macro F1 (%)                                                                    Accuracy (%)
+                   60                                                                   80                                                                              60
+
+                                                                                        60
+                   40                                                                                                                                                   40
+                                                                                        40
+                                                                 S1                                                                                                                                                    S1
+                                                                 S2                     20                                                                                                                             S2
+                   20                                            S3                                                                                                     20                                             S3
+                                                                                         0
+                        0     50           100        150        200                                   S1              S2                    S3                                0     100   200      300     400
+                                          Round                                                                                                                                      Cumulative traffic (MiB)
+
+
+
+
+Figure 21 (F21). Compact paper-versus-reproduction summary. Top: round-200 accuracy, macro
+F1 and macro precision against the paper’s Table II. Bottom left: accuracy trajectories with paper Table
+III points. Bottom centre: macro F1 as reported over 11 classes versus the same metric with the merged
+gafgyt flooding pair scored as one class. Bottom right: accuracy against federation-wide cumulative traffic.
+SSFL reproduction report                                                                                      4
+
+
+
+All values come from a single run per scenario.
+
+
+3. Research question and scope
+
+The question examined is narrow: do the transferred SSFL runs reproduce the SSFL results the
+paper reports – Table II (final accuracy, F1, precision), Table III (accuracy at rounds 10, 50, 100, 150, 200)
+and Table IV (communication cost) – and where they do not, what in the recorded telemetry explains the
+difference?
+Scope and ground rules of this analysis:
+
+    Analysis only: no training was rerun, and no experiment source code, configuration, telemetry or trans-
+     ferred result was modified. Every new file lives under artifacts/analysis/ssfl solution report/.
+    The transfer intentionally excluded the raw dataset arrays and all model weight checkpoints. Claims
+     about raw features or weights are therefore out of scope; the analysis uses the recorded dataset manifests,
+     metrics, aggregation audits and telemetry.
+    Only the SSFL algorithm is covered. The repository also implements FL, FD and DS-FL baselines, but
+     no baseline runs were part of the transferred solution suite.
+    One run per scenario (seed 2023). Round-to-round variation within a single run is reported as stability,
+     never as statistical uncertainty; no confidence intervals or significance tests are presented, because
+     rounds of one run are not independent samples.
+    Paper values were transcribed from the PDF in the repository root and are quoted only where they
+     were verified there.
+
+
+4. Paper and method overview
+
+Zhao et al. propose SSFL, a semisupervised federated intrusion-detection method for IoT in which clients
+hold unlabeled private traffic and only the server holds a small labeled dataset. The method reproduced
+here follows the paper’s specification as implemented in this repository:
+
+    Each communication round has two phases. In the proposal phase every client runs its local model
+     over the shared open set (8,900 samples) and uploads one hard pseudo-label per sample. A per-client
+     discriminator marks samples as familiar or unfamiliar, and a confidence threshold set at the median
+     of the client’s predicted probabilities suppresses low-confidence proposals.
+    The server aggregates proposals by majority vote into a global pseudo-label vector plus a validity
+     mask, and broadcasts both. In the distillation phase each client trains its local model for 5 local
+     epochs against the valid global pseudo-labels (plus its private data), so knowledge moves through labels
+     only – model parameters never cross the wire.
+    The backbone is the paper’s CNN: eight one-dimensional convolution layers with an MLP head, an
+     11-way traffic classifier and a 2-way discriminator, on 115 input features reshaped to 23x5.
+
+The paper evaluates on N-BaIoT (9 IoT devices, 1 benign plus 10 botnet traffic classes from the gafgyt
+and mirai families) under three non-IID client partitions, and reports SSFL beating FL, FD and DS-FL
+baselines with final accuracy 87.40% / 86.70% / 84.22% (Table II), the convergence profile in Table III, and
+a communication cost orders of magnitude below parameter-exchanging FL (Table IV). This reproduction
+targets those three tables for SSFL only.
+
+
+5. Reproduction environment
+
+The runs executed on a single Linux workstation with an NVIDIA GeForce RTX 3090 – the same GPU
+model the paper used, which makes the runtime comparison in Section 21 unusually direct. The paper’s
+stated environment is Python 3.7 with PyTorch 1.x on an Intel Core i9-11900K with 64 GB RAM and an
+RTX 3090; the reproduction used a substantially newer stack:
+SSFL reproduction report                                                                                         5
+
+
+
+    Host: Linux-6.8.0-124-generic-x86 64-with-glibc2.35, 20 logical CPUs, 31.1 GiB RAM (the paper’s
+     machine had 64 GB).
+    GPU: NVIDIA GeForce RTX 3090, 23.6 GiB VRAM, compute capability 8.6, 82 SMs, driver 560.35.05.
+    Software: Python 3.12.13, torch 2.6.0+cu124 (CUDA 12.4, cuDNN 90100), flwr 1.32.1, numpy 2.5.1,
+     pandas 3.0.5, ray 2.55.1, scikit-learn 1.9.0.
+    Federation simulated with Flower’s Ray backend: at most 8 concurrent client actors, each allotted 0.125
+     GPU and 1 CPU.
+
+The dependency set is deliberately ”latest installable” rather than the paper’s pinned versions (a standing
+decision of this repository), so framework-level numerical differences versus PyTorch 1.x are an accepted,
+documented deviation (Section 22). The environment snapshot is identical across the three runs except for
+timestamps.
+
+
+6. Dataset and partitioning
+
+The runs used the repository’s mini-N-BaIoT preparation: 89 source CSV files across 9 devices and 11 traffic
+classes, 1000 records sampled per device-class subset, 89,000 records in total, split 62,300 private / 8,900
+open / 17,800 test (70/10/20), min-max normalized (mode all mini), preparation seed 2023. The dataset
+manifest hash d7966afc8a735de3... is identical in all three run directories, so all scenarios trained and
+were tested on exactly the same prepared data.
+Client partitions follow the paper’s three non-IID scenarios: scenario 1 splits each device’s private data into
+label-sorted shards for 3 clients per device (27 clients); scenario 2 gives each device-class subset its own client
+(89 clients); scenario 3 draws client class mixtures from a Dirichlet distribution with alpha = 0.1 (89 clients).
+The open set (8,900 samples) is read by every client from shared storage rather than transmitted, which is
+why the paper’s one-off open-set distribution cost has no counterpart in the recorded traffic (Section 12).
+Its composition follows the subset structure – 100 samples per device-class subset, hence 900 for benign and
+for each gafgyt class but 700 for each mirai class, mirai being absent from two of the nine devices; test-set
+supports scale the same way (1,800 versus 1,400).
+The raw feature arrays themselves were not transferred, so this report makes no claim about feature values –
+including any claim that gafgyt.tcp and gafgyt.udp rows are near-identical in feature space; that hypothesis
+is discussed in Section 17 strictly as a hypothesis.
+
+
+7. Resolved experimental configuration
+
+Table T1 compares every configuration choice against the paper’s specification. The resolved configuration
+is the same in all three runs except for scenario and the derived client count: backbone cnn, 200 rounds, 5
+local epochs, Adam at learning rate 0.0001, batch size 80, hard pseudo-labels, median confidence threshold,
+discriminator and majority voting enabled, seed 2023, deterministic = true.
+One assumption deserves emphasis: the paper is internally inconsistent about batch size (80 in Table I’s
+footnote, 100 in the Section V prose); the reproduction uses 80 and records the alternative as the unused flag
+paper text batch. All other hyperparameters match the paper’s stated values exactly.
+                                                                                                                                                                                                                                      SSFL reproduction report
+Table 1 (T1). Configuration comparison: paper statement vs resolved implementation. Paper statements are quoted from Zhao et al. Section V and
+Table I. ’Assumption’ marks a choice forced by an internal inconsistency in the paper; ’deviation’ marks a knowingly different host/software stack.
+
+   Aspect                       Paper statement                                                                               Resolved implementation setting                                                            Status
+
+   Dataset                      mini-N-BaIoT: 9 devices, 11 traffic classes, 1000 records per device-class subset          Same construction; manifest records 89 source files, 9 devices, 1000 samples/subset, 89,000   match
+                                                                                                                           records
+   Split proportions            private 70% / open 10% / test 20%, mutually disjoint                                       private 62,300 / open 8,900 / test 17,800 (70/10/20 of 89,000)                                match
+   Features / input shape       115 features reshaped to a 23x5 matrix                                                     115 features; CNN input (batch, 23, 5)                                                        match
+   Normalization                min-max scaling to [0, 1]                                                                  min-max, mode = all mini                                                                      match
+   Backbone                     CNN: 8 Conv1D layers (4x64k3s1, 2x128k3s1, 2x128k3s2) + MLP head; 11-way classifier, 2-way backbone = cnn                                                                                match
+                                discriminator
+   Scenario 1 clients           K di = 3 per device -> 27 clients, 2 x K di label-sorted shards                            27 clients                                                                                    match
+   Scenario 2 clients           K di = L di -> 89 clients                                                                  89 clients                                                                                    match
+   Scenario 3 clients           Dirichlet(alpha = 0.1), K di = L di -> 89 clients                                          89 clients, dirichlet alpha = 0.1                                                             match
+   Communication rounds         200 (Table III reports up to round 200)                                                    200                                                                                           match
+   Local epochs / round         5                                                                                          5                                                                                             match
+   Optimizer                    Adam                                                                                       Adam                                                                                          match
+   Learning rate                0.0001                                                                                     0.0001                                                                                        match
+   Batch size                   80 (Table I footnote 2) vs 100 (Section V-C prose) – the paper is internally inconsistent  80 (paper text batch = False)                                                                 assumption
+   Confidence threshold theta c median of each client’s predicted probabilities                                            ssfl threshold policy = median                                                                match
+   Uploaded label form          hard labels (integers), with -1 for unfamiliar samples                                     ssfl label representation = hard, int8 vector of 8,900 entries                                match
+   Discriminator                enabled (2-class familiar/unfamiliar CNN)                                                  ssfl discriminator mode = enabled                                                             match
+   Voting                       server majority vote over per-class voting sets                                            ssfl voting mode = enabled                                                                    match
+   Client participation         all K clients every round                                                                  400/400 (round, phase) slots with full replies                                                match
+   Python                       3.7                                                                                        3.12.13                                                                                       deviation
+   PyTorch                      1.9.0                                                                                      2.6.0+cu124                                                                                   deviation
+   GPU                          NVIDIA GeForce RTX 3090                                                                    NVIDIA GeForce RTX 3090                                                                       match
+   CPU / RAM                    Intel Core i9-11900K @ 3.50 GHz, 64 GB                                                     x86 64, 20 logical CPUs, 31.1 GiB                                                             deviation
+   Seeding                      not stated                                                                                 seed = 2023, deterministic = True (requested)                                                 addition
+
+
+
+
+                                                                                                                                                                                                                                      6
+SSFL reproduction report                                                                                    7
+
+
+
+8. Artifact-integrity audit
+
+Before any comparison, the transferred artifacts were audited for completeness and internal consistency: 45
+checks, of which 32 passed, 13 produced warnings, and none failed. Every scenario has all 200 rounds
+of metrics (200 rows), per-class metrics (2,200 rows), communication records, aggregation audits and server
+lifecycle events; client participation is complete (27/89/89 clients in every round); the error tally is zero
+across all telemetry; and the dataset manifest hash matches across runs. No metric value anywhere is NaN
+or infinite.
+The 13 warnings fall into four groups, none of which undermines the results:
+
+    Checkpoint retention (3): telemetry records the policy milestones plus latest, not the expected
+     latest only; 195 of 200 per-round checkpoints were pruned, keeping milestones 10/50/100/150/200.
+     This only affects which checkpoints exist on the source machine – none were transferred.
+    Git provenance (3): all runs were executed from commit 78df829dd1ce with a dirty working tree
+     (git dirty = true), so the exact executed code cannot be pinned to a commit.
+    code version.json (3): the file is present but empty in each run directory, providing no additional
+     code fingerprint.
+    Determinism metadata (3 + 1 global): environment.json is captured before determinism is con-
+     figured, so its deterministic algorithms enabled = false cannot confirm the deterministic setting;
+     moreover configure determinism() is called only in the server process, while Ray client actors receive
+     seeding but not deterministic-kernel enforcement. Bit-exact re-runnability is therefore not established
+     (Section 22).
+                                                                                                                                                                                               SSFL reproduction report
+Table 9 (T9). Artifact-integrity tallies per scenario. ’Replies expected’ is 200 rounds x 2 protocol phases x K clients. Every tally that should be zero is zero
+in all three scenarios.
+
+           Scenario Replies expected Replies received Distinct clients Errored replies Rejected replies Malformed JSON Non-finite values Missing rounds Batch-level events Telemetry records
+
+           1        10800            10800           27              0               0               0                 0                0               0                 193392
+           2        35600            35600           89              0               0               0                 0                0               0                 610955
+           3        35600            35600           89              0               0               0                 0                0               0                 610599
+
+
+
+
+                                                                                                                                                                                               8
+SSFL reproduction report                                                                                               9
+
+
+
+9. Overall results
+
+Figure F1 shows the three accuracy trajectories with the paper’s Table III milestones overlaid; Figures F2-
+F4 give per-scenario panels and the macro-averaged F1, precision and recall curves. The reproduction’s
+qualitative story matches the paper – scenario 1 ends highest, scenarios 2 and 3 within about half a point of
+each other – but the path differs: all three runs spend the middle of training 4-10 percentage points below
+the paper’s curve and close most of the gap in a late surge after round 150.
+
+                   Scenario 1 finishes at 87.92% accuracy / 85.89% macro F1, with its best round being the final one
+                    (round 200).
+                   Scenario 2 finishes at 83.69% / 81.00%, best 84.25% at round 196.
+                   Scenario 3 finishes at 83.76% / 81.68%, best 83.89% at round 196.
+
+Normalized area under the accuracy-versus-round curve – a path-sensitive summary – is 77.59% / 74.80%
+/ 78.39%: scenario 3 is actually the best run by this measure despite the lowest paper target, because its
+early convergence is fastest. Stability over the final windows (Table T11) is good in all runs: last-10-round
+accuracy standard deviation is 0.32 / 0.43 / 0.29 percentage points, and the final round is within 0.6 points
+of the best round everywhere, so the runs did not end on an unlucky dip.
+
+
+                                    Reproduced accuracy vs. round, with Zhao et al. Table III points overlaid
+                           90
+
+
+                           80
+
+
+                           70
+
+
+
+
+ Top-1 test accuracy (%)
+                           60
+
+
+                           50
+
+
+                           40
+
+
+                           30
+
+                                                                                  Scenario 1       Scenario 3
+                           20
+                                                                                  Scenario 2       Paper (Table III)
+
+                                0        25        50       75    100        125          150      175          200
+                                                             Communication round
+
+
+Figure 1 (F1). Top-1 test accuracy versus communication round. Solid lines are the reproduced
+runs (200 rounds, one run per scenario). Crosses are the values Zhao et al. report in Table III at rounds 10,
+50, 100, 150 and 200, drawn in the matching scenario colour. No error bands are shown because a single seed
+was executed per scenario.
+SSFL reproduction report                                                                                                                              10
+
+
+
+                                                  Per-scenario accuracy: reproduced trajectory vs. paper reference points
+
+                                             Scenario 1                              Scenario 2                              Scenario 3
+                           90
+
+                           80
+
+
+
+
+ Top-1 test accuracy (%)
+                           70
+
+                           60
+
+                           50
+
+                           40
+
+                           30
+                                                          Reproduced
+                                                          Paper
+                           20                             Paper final
+
+                                0       50      100       150      200   0      50      100       150   200   0         50      100       150    200
+                                               Round                                   Round                                   Round
+
+
+
+Figure 2 (F2). Per-scenario accuracy comparison panels. Each panel shows one scenario on a shared
+y-axis. The dotted horizontal line is the paper’s reported final accuracy for that scenario (Table II).
+
+
+                                                 Macro F1 versus round (dotted lines: paper Table II final F1)
+                            90
+
+                            80
+
+                            70
+
+                            60
+
+
+
+
+      Macro F1 (%)
+                            50
+
+                            40
+
+                            30
+
+                            20
+                                                                                                                                       Scenario 1
+                            10                                                                                                         Scenario 2
+                                                                                                                                       Scenario 3
+
+                                    0           25               50          75    100        125                 150           175             200
+                                                                              Communication round
+
+
+Figure 3 (F3). Macro F1 versus communication round. Macro F1 averages the per-class F1 over
+all 11 classes, so the collapsed gafgyt.tcp/gafgyt.udp class contributes a hard zero from the collapse round
+onward.
+SSFL reproduction report                                                                                                   11
+
+
+
+                                           Macro precision and macro recall versus round
+
+                                Macro precision                                             Macro recall
+                                                                      90
+
+
+           80                                                         80
+
+                                                                      70
+
+           60
+                                                                      60
+
+ Percent                                                              50
+           40
+
+                                                                      40
+
+           20                                                         30
+                                                        Scenario 1
+                                                        Scenario 2
+                                                        Scenario 3
+                                                                      20
+           0
+                0   25   50     75  100    125    150   175     200        0   25   50     75  100    125    150   175   200
+                              Communication round                                        Communication round
+
+
+
+Figure 4 (F4). Macro precision and macro recall versus round. Dotted lines in the left panel are
+the paper’s Table II precision values. The reproduced macro precision plateaus 8-12 percentage points below
+the paper in every scenario, which is the single largest discrepancy in this reproduction.
+                                                                                                                                                              SSFL reproduction report
+Table 4 (T4). Best-round vs final-round summary. ’Final - best’ quantifies how much accuracy the run gave back between its peak and round 200. Note the
+minimum test loss occurs in the first ˜15 rounds in every scenario, long before peak accuracy.
+
+                            Scenario Best acc. (%) Best round Final acc. (%) Final - best (pp) Best macro F1 (%) Best F1 round Min test loss Min-loss round
+
+                            1        87.9213       200        87.9213        0.0000          85.8856            200            1.9043       4
+                            2        84.2528       196        83.6910        -0.5618         81.5834            196            1.1715       12
+                            3        83.8876       196        83.7640        -0.1236         81.8197            196            1.6531       13
+
+
+
+
+                                                                                                                                                              12
+SSFL reproduction report                                                                                                             13
+
+
+
+Table 10 (T10). Accuracy at milestone rounds, with the difference from Zhao et al. Table
+III where the paper reports a value. Round 196 is included because it is the best-accuracy round in
+scenarios 2 and 3.
+
+             Round S1 acc. (%) S2 acc. (%) S3 acc. (%) S1 diff (pp) S2 diff (pp) S3 diff (pp)
+             1           17.2472              20.2079         30.2865
+             10          68.0000              68.8708         71.4270         -9.9000     -6.3892             -0.7330
+             25          70.7416              70.5730         73.5674
+             50          73.9551              72.5225         75.1011         -9.8549     -7.9075             -3.2889
+             75          75.7640              73.6124         78.1461
+             100         77.4494              73.2640         78.2697         -7.4506     -11.8260            -5.0103
+             125         80.5056              75.7697         81.7640
+             150         81.7978              77.1910         81.9326         -5.3922     -9.1190             -1.9074
+             175         82.9045              82.1966         81.6292
+             196         86.8764              84.2528         83.8876
+             200         87.9213              83.6910         83.7640         0.5213      -3.0090             -0.4560
+
+
+
+Table 11 (T11). Accuracy and test-loss statistics over the final 10, 20 and 50 rounds. These are
+descriptive dispersion statistics over successive rounds of a single run. Successive rounds are not independent
+samples, so they must not be read as confidence intervals over seeds.
+
+       Scenario Window          Acc. mean (%) Acc. std (pp) Acc. min (%) Acc. max (%) Loss mean Loss std Loss min Loss max
+
+       1       last 10 rounds   87.5708             0.3237        86.8764      87.9213   4.0148      0.7701      3.1989    5.1305
+       1       last 20 rounds   86.6860             1.5222        82.3989      87.9213   4.1246      0.7430      2.9843    5.3704
+       1       last 50 rounds   84.1374             2.3346        81.3708      87.9213   4.1144      0.6679      2.7322    5.5602
+       2       last 10 rounds   83.6157             0.4291        82.9775      84.2528   3.6071      0.9262      1.5023    4.6586
+       2       last 20 rounds   83.1728             0.6206        82.1461      84.2528   3.7109      0.9116      1.5023    4.8113
+       2       last 50 rounds   81.3764             2.1529        76.8652      84.2528   4.1232      1.0385      1.5023    7.6024
+       3       last 10 rounds   83.4607             0.2928        83.0281      83.8876   15.0858     5.8807      6.0491    27.0170
+       3       last 20 rounds   83.2694             0.3531        82.4551      83.8876   15.6417     4.6025      6.0491    27.0170
+       3       last 50 rounds   82.7527             0.5829        81.6011      83.8876   12.7561     5.5929      3.6851    27.0170
+
+
+
+
+10. Table II comparison (final metrics)
+
+Table T2 reproduces the paper’s Table II. Accuracy differences are +0.52 / -3.01 / -0.46 percentage points
+– scenario 1 slightly above the paper, scenario 3 within half a point, scenario 2 the outlier at about three
+points below. Macro F1 tracks the same pattern.
+Precision is the sore spot: the reproduction’s macro precision trails the paper’s reported precision by -7.92
+/ -12.19 / -9.39 percentage points. Two effects stack here. First, the paper does not state its averaging
+convention; Table T2b therefore reports macro, micro and weighted variants of precision, recall and F1, and
+no convention reaches the paper’s 90-92% precision while accuracy and F1 do align – so the convention
+alone does not explain the gap. Second, the TCP/UDP class merge (Section 17) puts every sample of two
+classes into one predicted class, which caps that class’s precision near 50% and mechanically drags the macro
+average down by roughly 4-5 points. A run without the merge would plausibly close most of the precision
+gap, which is why the merge – not a generally weaker classifier – is identified as the main driver.
+Table 2 (T2). Table II reproduction: final-round detection performance vs Zhao et al.. Repro-
+duced values are the round-200 centralised server evaluation on the held-out test split (17,800 samples). The
+paper does not state which averaging convention its F1/precision use; the macro average is reported here and
+the micro/weighted alternatives appear in Table T2b.
+
+       Scenario Metric                    Paper (%) Reproduced (%) Abs. diff (pp) Signed diff (pp) Relative diff (%)
+       1           Accuracy               87.4000       87.9213             0.5213       0.5213                 0.5965
+       1           Macro F1               86.5000       85.8856             0.6144       -0.6144                -0.7103
+       1           Macro precision        92.3300       84.4140             7.9160       -7.9160                -8.5736
+       2           Accuracy               86.7000       83.6910             3.0090       -3.0090                -3.4706
+       2           Macro F1               84.9500       81.0003             3.9497       -3.9497                -4.6495
+       2           Macro precision        91.7300       79.5416             12.1884      -12.1884               -13.2873
+       3           Accuracy               84.2200       83.7640             0.4560       -0.4560                -0.5414
+       3           Macro F1               82.4700       81.6849             0.7851       -0.7851                -0.9520
+       3           Macro precision        90.1700       80.7813             9.3887       -9.3887                -10.4123
+                                                                                                                                                                        SSFL reproduction report
+Table 2b (T2b). Round-200 precision/recall/F1 under macro, micro and weighted averaging. Under micro averaging precision = recall = F1 = accuracy
+for single-label multiclass classification, which is why the micro row reproduces the accuracy figure exactly. The paper does not state its convention; macro is used
+as the headline throughout this report because it is the convention that penalises the collapsed minority class, and therefore the conservative choice.
+
+                     Scenario Averaging Precision (%) Recall (%) F1 (%) Paper F1 (%) F1 diff (pp) Paper precision (%) Precision diff (pp)
+                     1        macro       84.4140        88.9134    85.8856   86.5000      -0.6144      92.3300              -7.9160
+                     1        micro       87.9213        87.9213    87.9213   86.5000      1.4213       92.3300              -4.4087
+                     1        weighted    82.9035        87.9213    84.5477   86.5000      -1.9523      92.3300              -9.4265
+                     2        macro       79.5416        84.0137    81.0003   84.9500      -3.9497      91.7300              -12.1884
+                     2        micro       83.6910        83.6910    83.6910   84.9500      -1.2590      91.7300              -8.0390
+                     2        weighted    78.7192        83.6910    80.3411   84.9500      -4.6089      91.7300              -13.0108
+                     3        macro       80.7813        84.7734    81.6849   82.4700      -0.7851      90.1700              -9.3887
+                     3        micro       83.7640        83.7640    83.7640   82.4700      1.2940       90.1700              -6.4060
+                     3        weighted    79.2906        83.7640    80.3377   82.4700      -2.1323      90.1700              -10.8794
+
+
+
+
+                                                                                                                                                                        14
+SSFL reproduction report                                                                                                                                                                15
+
+
+
+11. Table III convergence comparison
+
+Table T3 places the reproduced accuracy at rounds 10/50/100/150/200 against the paper’s Table III, and
+Figure F8 plots the gap at each milestone. The reproduction converges consistently more slowly: at
+round 10 it is -9.90 / -6.39 / -0.73 percentage points below the paper, the deficit peaks around rounds 100-
+150 (scenario 2 is 11.8 points below at round 100), and only the late surge after round 150 closes it – fully in
+scenarios 1 and 3, partially in scenario 2.
+Table T12 summarizes convergence speed differently: every run crosses 50% accuracy by round 4 and 70%
+by round 15, but reaching 75-80% takes tens to more than a hundred rounds. Only scenario 1 ever reaches
+its paper’s final accuracy (round 188); scenarios 2 and 3 never touch theirs within 200 rounds (84.25% and
+83.89% best versus 86.70% and 84.22% targets). The plausible contributors – majority-vote noise early on, the
+collapsed class pair permanently sacrificing about 5 points of headroom, and framework/version differences
+– are taken up in Sections 17 and 22.
+Table 3 (T3). Table III reproduction: top-1 test accuracy at rounds 10/50/100/150/200. A
+positive difference means the reproduced run was ahead of the paper at that round.
+
+                                                                       Scenario Round Paper acc. (%) Reproduced acc. (%) Diff (pp)
+                                                                       1             10         77.9000            68.0000                         -9.9000
+                                                                       1             50         83.8100            73.9551                         -9.8549
+                                                                       1             100        84.9000            77.4494                         -7.4506
+                                                                       1             150        87.1900            81.7978                         -5.3922
+                                                                       1             200        87.4000            87.9213                         0.5213
+                                                                       2             10         75.2600            68.8708                         -6.3892
+                                                                       2             50         80.4300            72.5225                         -7.9075
+                                                                       2             100        85.0900            73.2640                         -11.8260
+                                                                       2             150        86.3100            77.1910                         -9.1190
+                                                                       2             200        86.7000            83.6910                         -3.0090
+                                                                       3             10         72.1600            71.4270                         -0.7330
+                                                                       3             50         78.3900            75.1011                         -3.2889
+                                                                       3             100        83.2800            78.2697                         -5.0103
+                                                                       3             150        83.8400            81.9326                         -1.9074
+                                                                       3             200        84.2200            83.7640                         -0.4560
+
+
+
+                                                                      Accuracy difference from Zhao et al. at Table III milestone rounds
+
+
+
+
+ Reproduced minus paper accuracy (percentage points)
+                                                                                                                                                                +0.52
+
+                                                         0
+                                                                                                                                                                                -0.46
+                                                                             -0.73
+
+                                                       −2                                                                                               -1.91
+
+                                                                                                                                                                        -3.01
+                                                                                                       -3.29
+                                                       −4
+
+                                                                                                                                -5.01
+                                                                                                                                        -5.39
+                                                       −6
+                                                                     -6.39
+
+                                                                                                               -7.45
+                                                       −8                                      -7.91
+
+
+                                                                                                                                                -9.12
+                                                       −10   -9.90                     -9.85                                                                              Scenario 1
+                                                                                                                                                                          Scenario 2
+                                                                                                                                                                          Scenario 3
+                                                       −12                                                             -11.83
+
+                                                                     R10                  R50             R100             R150                                     R200
+                                                                                       Communication round reported in paper Table III
+
+
+Figure 8 (F8). Accuracy difference from the paper at milestone rounds. Positive bars mean the
+reproduced run was ahead of the paper at that round. Values are differences in percentage points, not relative
+percentages.
+                                                                                                                                                                      SSFL reproduction report
+Table 12 (T12). Convergence speed and stability descriptors. ’R>=X’ is the first round whose test accuracy reaches X (empty if never reached). AUAC
+is the trapezoidal area under the accuracy-vs-round curve divided by the round span, i.e. the mean accuracy across rounds 1-200. ’L50’ statistics cover the last 50
+rounds; |d| is the absolute round-to-round accuracy change in percentage points; the loss slope is per round.
+
+                         Scenario R>=50% R>=70% R>=75% R>=80% Paper final (%) R>=paper final AUAC (%) L50 mean |d| (pp) L50 max |d| (pp) L50 loss slope
+
+                         1       3        15      52       117      87.4000       188.0000       77.5921   0.6075          4.0787          -0.0071
+                         2       4        9       116      157      86.7000                      74.7991   0.6662          3.4382          -0.0318
+                         3       3        8       33       89       84.2200                      78.3865   0.3552          0.9438          0.2173
+
+
+
+
+                                                                                                                                                                      16
+SSFL reproduction report                                                                                      17
+
+
+
+12. Table IV communication comparison
+
+The paper’s Table IV counts, for a representative client, the cumulative uplink of label vectors during training:
+C@50, C@75 (cost until 50%/75% accuracy) and C@Top-Acc, plus a one-off 0.96 MB C@D-o for distributing
+the open dataset. The reproduced protocol sends exactly one 8,900-byte int8 hard-label vector per client per
+round, so the paper-accounting cumulative cost is 1.78 MB (= 1.6975 MiB) over 200 rounds in every scenario.
+Reproduced milestones are the same order of magnitude as, but consistently above, the paper’s: C@50 =
+0.0267 / 0.0356 / 0.0267 MB against the paper’s 0.01 MB, and C@Top-Acc = 1.78 / 1.74 / 1.74 MB against
+0.55 / 0.49 / 0.47 MB. The C@Top-Acc ratio of roughly 3x follows directly from when top accuracy occurs:
+the paper’s runs peak mid-training while the reproduction peaks at rounds 196-200, so the cumulative count
+runs to the end. The C@50/C@75 gaps mirror the slower convergence of Section 11 plus the paper’s unstated
+byte unit and possible per-label encoding. C@D-o has no reproduced counterpart: the open set was read
+from shared storage, not transmitted, and no plausible encoding of the transferred quantities reconstructs
+0.96 MB (Table T14’s caption). The qualitative claim that survives untouched is the paper’s central one –
+SSFL’s traffic is labels, not parameters, three to four orders of magnitude below parameter exchange.
+                                                                                                                                                                                  SSFL reproduction report
+Table 6 (T6). Communication cost: reproduced accounting vs Zhao et al. Table IV. ’Paper-accounting’ follows Table IV’s representative-client train-
+uplink convention: one 8,900-byte int8 hard-label vector per client per round, cumulated over rounds. ’Logical’ sums every payload byte across all clients, phases
+and directions; ’serialized’ is the byte count Flower actually put on the wire. The paper does not state whether its MB is 10ˆ6 or 2ˆ20 bytes, so both are reported in
+Table T14. C@Dˆo (0.96 MB) has no reproduced counterpart – see the caption of Table T14. Column key: ’P’ = paper value (MB as printed in Table IV), ’R’ =
+reproduced value (MiB, paper-accounting convention), ’rd’ = first round at which the accuracy threshold was reached, ’P-acct’ = paper-accounting cumulative uplink
+at round 200.
+
+      Scenario Clients Logical (MiB) Serial. (MiB) P-acct (MiB) C@50 P (MB) C@50 R (MiB) C@50 rd C@75 P (MB) C@75 R (MiB) C@75 rd C@Top P (MB) C@Top R (MiB) Top acc (%) Top rd
+
+      1       27     137.5008    146.0667     1.6975      0.0100       0.0255        3       0.0200       0.4414        52      0.5500         1.6975        87.9213     200
+      2       89     453.2433    481.5466     1.6975      0.0100       0.0340        4       0.0200       0.9846        116     0.4900         1.6636        84.2528     196
+      3       89     453.2433    481.5464     1.6975      0.0100       0.0255        3       0.0400       0.2801        33      0.4700         1.6636        83.8876     196
+
+
+
+
+                                                                                                                                                                                  18
+SSFL reproduction report                                                                                     19
+
+
+
+13. Scenario 1 analysis (label-sorted shards, 27 clients)
+
+Scenario 1 – three clients per device, each holding two label-sorted shards – is the paper’s mildest partition
+and the reproduction’s best run, and the only one to beat its paper target.
+
+    Final accuracy 87.92% (paper 87.40%, difference +0.52 pp); macro F1 85.89%; best accuracy 87.92%
+     at round 200.
+    Reached 70% at round 15, 80% at round 117; minimum test loss 1.904 at round 4; final test loss 3.199.
+    Valid pseudo-label rate at round 200: 99.82%.
+    The TCP/UDP merge picks the opposite survivor to scenarios 2-3: pseudo-label class gafgyt.tcp goes
+     to zero at round 4 and gafgyt.udp absorbs the pair.
+
+Its trajectory is the most dramatic: near-flat progress through rounds 25-150 (roughly 71% to 82%), then a
+sharp climb of five points over the final 25 rounds, ending at its global best on round 200 exactly. Aside from
+the merged flooding pair, its final confusion matrix (Section 16) is almost diagonal – every class outside the
+merged pair has F1 of 0.949 or higher. The late surge suggests the run was still improving when the round
+budget ended.
+
+
+14. Scenario 2 analysis (one client per device-class subset, 89 clients)
+
+Scenario 2 – every one of the 89 device-class subsets is its own single-class client – is the hardest partition
+for pseudo-label consensus, since no client ever sees two classes, and it is the run furthest from the paper.
+
+    Final accuracy 83.69% (paper 86.70%, difference -3.01 pp); macro F1 81.00%; best accuracy 84.25% at
+     round 196.
+    Reached 70% at round 9, 80% at round 157; minimum test loss 1.171 at round 12; final test loss 3.323.
+    Valid pseudo-label rate at round 200: 99.93%.
+    The merge survivor is gafgyt.tcp; gafgyt.udp pseudo-labels reach zero at round 10, after a one-round
+     flip at round 9 in which udp briefly won the vote (visible in Figure F14’s zoom row).
+
+Beyond the flooding pair, scenario 2 also carries the largest secondary confusion: mirai.ack and mirai.udp
+exchange several hundred test samples in the final confusion matrix (419 mirai.ack predicted as mirai.udp
+and 354 the other way), leaving both classes near 0.70 F1 against 0.95+ elsewhere. Its accuracy plateau
+between rounds 50 and 150 is the longest of the three runs, and its late surge, while real (+7 points after
+round 150), still leaves it 3.01 points below the paper – the one scenario where the reproduction misses the
+published headline number by a clear margin even at its best round.
+
+
+15. Scenario 3 analysis (Dirichlet alpha = 0.1, 89 clients)
+
+Scenario 3 – client class mixtures drawn from a Dirichlet distribution with alpha = 0.1 – shows the fastest
+early convergence of the three (30.29% at round 1, 70% by round 8) and lands within half a point of its paper
+target.
+
+    Final accuracy 83.76% (paper 84.22%, difference -0.46 pp); macro F1 81.68%; best accuracy 83.89% at
+     round 196.
+    Reached 70% at round 8, 80% at round 89; minimum test loss 1.653 at round 13; final test loss 27.017.
+    Valid pseudo-label rate at round 200: 99.60%.
+    The merge survivor is gafgyt.tcp, established almost immediately: test-set udp recall is already 0 at
+     round 1 and udp pseudo-labels reach zero at round 3.
+
+Scenario 3’s defining anomaly is its test loss: from round ˜130 the loss climbs steadily and ends at 27.02 – the
+run’s own maximum, about 16x its round-13 minimum – while accuracy is the most stable of the three runs
+(last-50-round standard deviation 0.58 points). Section 19 analyzes this decoupling. It also has a secondary
+confusion of its own: gafgyt.junk is pulled toward gafgyt.combo (526 of 1,800 junk test samples, recall 0.70),
+a confusion essentially absent from scenario 1.
+SSFL reproduction report                                                                                         20
+
+
+
+16. Per-class and confusion-matrix analysis
+
+Table T5 lists final precision/recall/F1 for all 11 classes in each scenario; Figures F9-F12 give the raw and
+row-normalized confusion matrices, grouped F1 bars, and a metric heatmap.
+The dominant structure is the same in all three scenarios: the gafgyt.tcp / gafgyt.udp pair accounts for
+the largest single block of error everywhere. The surviving class of the pair shows recall ˜1.00 but precision
+˜0.50 (it receives both classes’ samples); the collapsed class scores exactly zero. This binary signature – one
+class at zero, its sibling at half precision – is what distinguishes a merge from ordinary confusion, where both
+classes would retain partial recall. Benign traffic is classified near-perfectly in all runs (F1 0.994-0.996), which
+matters for an intrusion-detection use case: false alarms stay rare regardless of the attack-class confusions.
+Outside the pair, scenario quality diverges. In scenario 1 all nine remaining classes score F1 0.949 or higher.
+Scenarios 2 and 3 add ordinary partial confusions – not merges – concentrated in two places: mirai.ack versus
+mirai.udp (scenario 2 F1 0.685 and 0.715; scenario 3 0.861 and 0.849) and, in scenario 3 only, gafgyt.junk
+pulled toward gafgyt.combo (junk recall 0.70, combo precision 0.764). Together these cost scenario 2 and 3
+roughly 3-4 accuracy points beyond the merge, which is why their merged-pair rescoring in Table T21 lands
+near 93.8% rather than scenario 1’s 98.0%.
+Table 5 (T5). Per-class precision, recall, F1 and support at round 200. Support is the number of
+test samples of that class; 1,800 for benign and the five gafgyt classes (9 devices x 200), 1,400 for the five
+mirai classes (7 devices x 200), 17,800 in total.
+
+                           Scenario Class Name            Precision Recall F1        Support
+                           1       0     benign           0.9939   0.9939   0.9939   1800
+                           1       1     gafgyt.combo     0.9261   0.9822   0.9534   1800
+                           1       2     gafgyt.junk      0.9816   0.9194   0.9495   1800
+                           1       3     gafgyt.scan      0.9912   0.9978   0.9945   1800
+                           1       4     gafgyt.tcp       0.0000   0.0000   0.0000   1800
+                           1       5     gafgyt.udp       0.4999   1.0000   0.6665   1800
+                           1       6     mirai.ack        0.9646   0.9343   0.9492   1400
+                           1       7     mirai.scan       0.9993   0.9950   0.9971   1400
+                           1       8     mirai.syn        0.9993   0.9993   0.9993   1400
+                           1       9     mirai.udp        0.9480   0.9643   0.9561   1400
+                           1       10    mirai.udpplain   0.9817   0.9943   0.9879   1400
+                           2       0     benign           0.9944   0.9944   0.9944   1800
+                           2       1     gafgyt.combo     0.9905   0.9239   0.9560   1800
+                           2       2     gafgyt.junk      0.9319   0.9878   0.9590   1800
+                           2       3     gafgyt.scan      0.9906   0.9928   0.9917   1800
+                           2       4     gafgyt.tcp       0.4992   0.9983   0.6656   1800
+                           2       5     gafgyt.udp       0.0000   0.0000   0.0000   1800
+                           2       6     mirai.ack        0.6946   0.6757   0.6850   1400
+                           2       7     mirai.scan       0.9978   0.9907   0.9943   1400
+                           2       8     mirai.syn        0.9922   0.9971   0.9947   1400
+                           2       9     mirai.udp        0.7035   0.7271   0.7151   1400
+                           2       10    mirai.udpplain   0.9549   0.9536   0.9543   1400
+                           3       0     benign           0.9923   0.9989   0.9956   1800
+                           3       1     gafgyt.combo     0.7637   0.9444   0.8445   1800
+                           3       2     gafgyt.junk      0.9316   0.7039   0.8019   1800
+                           3       3     gafgyt.scan      0.9972   0.9917   0.9944   1800
+                           3       4     gafgyt.tcp       0.4988   0.9983   0.6652   1800
+                           3       5     gafgyt.udp       0.0000   0.0000   0.0000   1800
+                           3       6     mirai.ack        0.8014   0.9307   0.8612   1400
+                           3       7     mirai.scan       0.9986   0.9950   0.9968   1400
+                           3       8     mirai.syn        0.9936   0.9993   0.9964   1400
+                           3       9     mirai.udp        0.9302   0.7807   0.8489   1400
+                           3       10    mirai.udpplain   0.9786   0.9821   0.9804   1400
+SSFL reproduction report                                                                                                                                                                                                                                                                                                                                                                                                21
+
+
+
+                                                                                                                                                           Raw final confusion matrices (round 200)
+
+                                                     Scenario 1                                                                                                                           Scenario 2                                                                                                                            Scenario 3
+               Ben.   1789                   11                                                                                         1800        Ben.   1790                    5                 4                                                        1               1800        Ben.   1798                    1       1                                                                                  1800
+
+               G_Co    1     1768    30                                              1
+                                                                                                                                        1600        G_Co    1     1663    130                                                      6
+                                                                                                                                                                                                                                                                              1600        G_Co    1     1700    93                                                       6
+                                                                                                                                                                                                                                                                                                                                                                                                                    1600
+
+               G_Ju          140     1655     1                           3                   1                                                     G_Ju    1     16      1778                                                     5                                                      G_Ju          526     1267     1                           1                   3            1             1
+                                                                                                                                        1400                                                                                                                                  1400                                                                                                                                  1400
+               G_Sc    3              1      1796                                                                                                   G_Sc    5                     1787               1         7                                                                          G_Sc   10                     1785     1                              1                                   3
+                                                                                                                                        1200                                                                                                                                  1200                                                                                                                                  1200
+              G_TCP    3                                       1797                                                                                G_TCP    3                             1797                                                                                           G_TCP    3                             1797
+
+
+
+
+True class
+                                                                                                                                        1000                                                                                                                                  1000                                                                                                                                  1000
+              G_UDP                                            1800                                                                                G_UDP                                  1800                                                                                           G_UDP                                  1800
+
+                                                                                                                                        800                                                                                                                                   800                                                                                                                                   800
+              M_Ack    4                                                 1308                             74          14                           M_Ack                           1                          946                              419          34                           M_Ack                                                      1303                             78           19
+
+
+                                                                                                                                        600                                                                                                                                   600                                                                                                                                   600
+               M_Sc                           3                 4                   1393                                                            M_Sc                          10       3                             1387                                                             M_Sc                           3       4                             1393
+
+
+
+              M_Syn           1                                                              1399                                       400        M_Syn                                                                  3       1396          1                             400        M_Syn                                                                  1       1399                                        400
+
+             M_UDP                                                       38                               1350        12                200       M_UDP                                                       354                              1018         28                200       M_UDP                                                       300                              1093           7               200
+
+             M_UDPp                           1                           7                                           1392
+                                                                                                                                        0         M_UDPp                           1                          55                                9           1335
+                                                                                                                                                                                                                                                                              0         M_UDPp                                                      22                                3           1375
+                                                                                                                                                                                                                                                                                                                                                                                                                    0
+
+                      Ben.                                                                                                                                 Ben.                                                                                                                                  Ben.
+                                                                                                                      M_UDPp                                                                                                                                M_UDPp                                                                                                                                M_UDPp
+                                                                         M_Ack               M_Syn                                                                                                            M_Ack               M_Syn                                                                                                             M_Ack               M_Syn
+                                                                                    M_Sc                                                                                                                                 M_Sc                                                                                                                                  M_Sc
+                                                                                                          M_UDP                                                                                                                                M_UDP                                                                                                                                 M_UDP
+                                             G_Sc                                                                                                                                 G_Sc                                                                                                                                  G_Sc
+                                                     G_TCP     G_UDP                                                                                                                      G_TCP     G_UDP                                                                                                                       G_TCP     G_UDP
+                             G_Co    G_Ju                                                                                                                         G_Co    G_Ju                                                                                                                          G_Co    G_Ju
+
+
+
+                                                       Predicted                                                                                                                            Predicted                                                                                                                             Predicted
+
+
+
+
+Figure 9 (F9). Raw final confusion matrices (round 200). Class order follows the repository label
+map (0 benign, 1-5 gafgyt combo/junk/scan/tcp/udp, 6-10 mirai ack/scan/syn/udp/udpplain). The off-
+diagonal block that dominates the error is the gafgyt.tcp / gafgyt.udp pair: in scenario 1, 1,797 of 1,800
+true gafgyt.tcp samples are predicted gafgyt.udp, and in scenarios 2 and 3 all 1,800 true gafgyt.udp samples
+are predicted gafgyt.tcp. Two secondary confusions are visible and are not present in scenario 1: mirai.ack
+against mirai.udp in scenarios 2 and 3, and gafgyt.junk against gafgyt.combo in scenario 3, where 526 of
+1,800 gafgyt.junk samples are absorbed by gafgyt.combo. Cells are raw test-sample counts.
+
+
+                                                                                                                                                   Row-normalised final confusion matrices (round 200)
+                                                       Scenario 1                                                                                                                           Scenario 2                                                                                                                            Scenario 3
+               Ben.   0.99                    0.01                                                                                          1.0     Ben.   0.99                                                                                                                   1.0     Ben.   1.00                                                                                                                   1.0
+
+               G_Co          0.98    0.02                                                                                                           G_Co          0.92    0.07                                                                                                            G_Co          0.94    0.05
+
+
+
+               G_Ju          0.08    0.92                                                                                                   0.8     G_Ju          0.01    0.99                                                                                                    0.8     G_Ju          0.29    0.70                                                                                                    0.8
+
+               G_Sc                           1.00                                                                                                  G_Sc                           0.99                                                                                                   G_Sc   0.01                    0.99
+
+
+
+              G_TCP                                             1.00                                                                        0.6    G_TCP                                   1.00                                                                                   0.6    G_TCP                                   1.00                                                                                   0.6
+
+
+True class
+              G_UDP                                             1.00                                                                               G_UDP                                   1.00                                                                                          G_UDP                                   1.00
+
+
+
+              M_Ack                                                        0.93                              0.05         0.01              0.4    M_Ack                                                        0.68                              0.30            0.02            0.4    M_Ack                                                        0.93                              0.06            0.01            0.4
+
+               M_Sc                                                                   0.99                                                          M_Sc                           0.01                                    0.99                                                           M_Sc                                                                   0.99
+
+
+
+              M_Syn                                                                             1.00
+                                                                                                                                            0.2    M_Syn                                                                             1.00
+                                                                                                                                                                                                                                                                                  0.2    M_Syn                                                                             1.00
+                                                                                                                                                                                                                                                                                                                                                                                                                        0.2
+
+             M_UDP                                                         0.03                              0.96         0.01                    M_UDP                                                         0.25                              0.73            0.02                  M_UDP                                                         0.21                              0.78            0.01
+
+
+
+             M_UDPp                                                        0.01                                           0.99
+                                                                                                                                            0.0   M_UDPp                                                        0.04                              0.01            0.95
+                                                                                                                                                                                                                                                                                  0.0   M_UDPp                                                        0.02                                              0.98
+                                                                                                                                                                                                                                                                                                                                                                                                                        0.0
+
+                      Ben.                                                                                                                                 Ben.                                                                                                                                  Ben.
+                                                                                                                               M_UDPp                                                                                                                                M_UDPp                                                                                                                                M_UDPp
+                                                                            M_Ack                 M_Syn                                                                                                          M_Ack                 M_Syn                                                                                                           M_Ack                 M_Syn
+                                                                                      M_Sc                                                                                                                                 M_Sc                                                                                                                                  M_Sc
+                                                                                                              M_UDP                                                                                                                                 M_UDP                                                                                                                                 M_UDP
+                                              G_Sc                                                                                                                                 G_Sc                                                                                                                                  G_Sc
+                                                       G_TCP     G_UDP                                                                                                                      G_TCP     G_UDP                                                                                                                       G_TCP     G_UDP
+                              G_Co    G_Ju                                                                                                                         G_Co    G_Ju                                                                                                                          G_Co    G_Ju
+
+
+
+                                                             Predicted                                                                                                                            Predicted                                                                                                                             Predicted
+
+
+
+
+Figure 10 (F10). Row-normalised final confusion matrices (round 200). Class order follows the
+repository label map (0 benign, 1-5 gafgyt combo/junk/scan/tcp/udp, 6-10 mirai ack/scan/syn/udp/udpplain).
+The off-diagonal block that dominates the error is the gafgyt.tcp / gafgyt.udp pair: in scenario 1, 1,797 of
+1,800 true gafgyt.tcp samples are predicted gafgyt.udp, and in scenarios 2 and 3 all 1,800 true gafgyt.udp
+samples are predicted gafgyt.tcp. Two secondary confusions are visible and are not present in scenario 1:
+mirai.ack against mirai.udp in scenarios 2 and 3, and gafgyt.junk against gafgyt.combo in scenario 3, where
+526 of 1,800 gafgyt.junk samples are absorbed by gafgyt.combo. Rows are normalised to sum to 1, so each
+cell is a recall share.
+SSFL reproduction report                                                                                                                                                                                                                                                                                            22
+
+
+
+
+                                                                                                                                     Per-class F1 at round 200
+          100
+
+
+
+               80
+
+
+
+               60
+
+ F1 (%)
+
+               40
+
+
+
+               20
+                                           Scenario 1
+                                           Scenario 2
+                                           Scenario 3
+               0
+                               Be                           G                               u
+                                                                                                           G
+                                                                                                               c              G                                     P               _A                       _S
+                                                                                                                                                                                                                   c                  yn                       P                          Pp
+                                 n.                          _C                      G_J                    _S                 _T                           D                         ck                                       _S                          D                       D
+                                                               o                                                                 CP                 G_U                             M                        M                 M
+                                                                                                                                                                                                                                                       _U                      _U
+                                                                                                                                                                                                                                                    M                      M
+                                                                                                                                                                    Class
+
+
+
+Figure 11 (F11). Per-class F1 at round 200. In every scenario one gafgyt flooding class sits at 0% F1
+and its sibling is capped near 66.6%, the value F1 takes when precision is 50% and recall is 100%. Outside
+the pair, scenario 1 keeps every class at or above 94.9%, while scenario 2 loses mirai.ack/mirai.udp to mutual
+confusion (F1 0.69/0.72) and scenario 3 additionally degrades gafgyt.combo and gafgyt.junk (0.84/0.80).
+
+
+                                                                                                                  Per-class precision, recall and F1 at round 200
+                                            Scenario 1                                                                                              Scenario 2                                                                                             Scenario 3
+
+                                                                                                     1.0                                                                                                     1.0                                                                                                    1.0
+Precision      0.99   0.93   0.98   0.99    0.00    0.50    0.96     1.00   1.00    0.95    0.98           Precision   0.99   0.99    0.93   0.99   0.50    0.00    0.69     1.00   0.99    0.70    0.95           Precision   0.99   0.76   0.93   1.00   0.50    0.00    0.80    1.00   0.99     0.93    0.98
+
+                                                                                                     0.8                                                                                                     0.8                                                                                                    0.8
+
+                                                                                                     0.6                                                                                                     0.6                                                                                                    0.6
+   Recall      0.99   0.98   0.92   1.00    0.00    1.00    0.93     0.99   1.00    0.96    0.99             Recall    0.99   0.92    0.99   0.99   1.00    0.00    0.68     0.99   1.00    0.73    0.95             Recall    1.00   0.94   0.70   0.99   1.00    0.00    0.93    0.99   1.00     0.78    0.98
+
+                                                                                                     0.4                                                                                                     0.4                                                                                                    0.4
+
+                                                                                                     0.2                                                                                                     0.2                                                                                                    0.2
+          F1   0.99   0.95   0.95   0.99    0.00    0.67    0.95     1.00   1.00    0.96    0.99                 F1    0.99   0.96    0.96   0.99   0.67    0.00    0.69     0.99   0.99    0.72    0.95                 F1    1.00   0.84   0.80   0.99   0.67    0.00    0.86    1.00   1.00     0.85    0.98
+
+                                                                                                     0.0                                                                                                     0.0                                                                                                    0.0
+
+               Ben.                                                                                                    Ben.                                                                                                    Ben.
+                                                                                            M_UDPp                                                                                                  M_UDPp                                                                                                 M_UDPp
+                                                             M_Ack          M_Syn                                                                                    M_Ack          M_Syn                                                                                  M_Ack           M_Syn
+                                                                     M_Sc                                                                                                    M_Sc                                                                                                  M_Sc
+                                                                                    M_UDP                                                                                                   M_UDP                                                                                                  M_UDP
+                                    G_Sc                                                                                                     G_Sc                                                                                                   G_Sc
+                                            G_TCP   G_UDP                                                                                           G_TCP   G_UDP                                                                                          G_TCP   G_UDP
+                      G_Co   G_Ju                                                                                             G_Co    G_Ju                                                                                            G_Co   G_Ju
+
+
+
+
+Figure 12 (F12). Per-class precision/recall/F1 heatmap at round 200. Green is 1.0, red is 0.0.
+The surviving member of the gafgyt.tcp/gafgyt.udp pair shows the characteristic precision-0.50 / recall-1.00
+signature of two classes merged into one predicted label.
+
+
+17. TCP/UDP class-collapse investigation
+
+The central defect found in the reproduction is a pseudo-label consensus collapse of the two gafgyt
+flooding classes. The aggregation audits record, per round, how many open-set samples the global vote
+assigns to each class; the open set contains 900 gafgyt.tcp and 900 gafgyt.udp samples, and within a handful
+of rounds one of the two classes’ global pseudo-label count falls to (and stays at) essentially zero while its
+sibling’s rises to about 1,800:
+
+           Scenario 1: gafgyt.tcp count reaches zero at round 4; survivor gafgyt.udp.
+           Scenario 2: gafgyt.udp count reaches zero at round 10 (after a one-round reversal at round 9 in which
+            udp briefly dominated); survivor gafgyt.tcp.
+           Scenario 3: gafgyt.udp count reaches zero at round 3; survivor gafgyt.tcp.
+
+The merged pair’s total pseudo-label count stays at 1,798-1,801 throughout – the samples are never lost or
+scattered, they are relabeled as one class. Once the global labels stop containing the collapsed class,
+SSFL reproduction report                                                                                                                                                                                                 23
+
+
+
+distillation actively teaches every client that the class does not exist, and the state is absorbing: no round in
+any scenario ever recovers it (Figures F14, F15). In scenarios 1 and 2 the consensus zero precedes or coincides
+with the test-set recall collapse; in scenario 3 the test recall is zero from round 1, before the consensus zero
+at round 3 – there the initial model state, not consensus feedback alone, sealed the outcome.
+The mechanism is consistent with hard-label majority voting on a near-inseparable class pair: if the two
+flooding attacks look alike in feature space, whichever class wins slightly more votes in early rounds gets all
+the merged samples, and hard labels leave no trace of the minority vote (a soft-label protocol would). Which
+sibling survives differs across scenarios – evidence for a random early tip, not a systematic bias. Because
+the raw feature arrays were not transferred, the near-inseparability premise is stated as a hypothesis, not a
+measured fact.
+Cost of the collapse (Table T21): rescoring the final confusion matrix with the pair merged into
+one class yields accuracy 98.02% / 93.80% / 93.88% and 10-class macro F1 97.80% / 92.43% / 93.19%,
+with the merged pair itself scoring precision and recall above 0.998 everywhere. In other words, the
+models detect gafgyt flooding essentially perfectly and only fail to tell its TCP and UDP variants apart;
+that single distinction costs about 10 points of headline accuracy. Full per-round trajectories are in
+tables/t18 tcp udp confusion trajectory.csv.
+
+                                                                                      gafgyt.tcp vs. gafgyt.udp consensus pseudo-labels over rounds
+
+
+                                                                 Scenario 1                                                Scenario 2                                                Scenario 3
+                                   3500
+
+
+
+
+Consensus pseudo-labels assigned
+                                                                                                                                                                                                    gafgyt.tcp (4)
+                                                                                                                                                                                                    gafgyt.udp (5)
+                                   3000
+                                                                                                                                                                                                    4 + 5 combined
+                                                                                                                                                                                                    true count (1,800)
+                                   2500
+
+                                   2000
+
+                                   1500
+
+                                   1000
+
+                                    500
+
+                                      0
+                                            25     50       75      100   125   150   175    200      25     50       75      100   125   150   175    200      25     50       75      100   125   150     175      200
+
+                                                        Scenario 1 (rounds 1-20)                                  Scenario 2 (rounds 1-20)                                  Scenario 3 (rounds 1-20)
+                                   3500
+
+
+
+
+Consensus pseudo-labels assigned
+                                   3000
+
+                                   2500
+
+                                   2000
+
+                                   1500
+
+                                   1000
+
+                                    500
+
+                                      0
+                                          2.5    5.0      7.5 10.0 12.5 15.0          17.5   20.0   2.5    5.0      7.5 10.0 12.5 15.0          17.5   20.0   2.5    5.0      7.5 10.0 12.5 15.0            17.5     20.0
+                                                         Communication round                                       Communication round                                       Communication round
+
+
+
+
+Figure 14 (F14). gafgyt.tcp vs. gafgyt.udp consensus pseudo-label trajectory. The combined line
+stays pinned at approximately 1,800 – exactly the true number of gafgyt.tcp plus gafgyt.udp samples in the
+open set – while the individual lines separate to 1,800 and 0. The federation does not lose these samples; it
+merges the two classes into one. Scenario 1 briefly favours gafgyt.tcp before flipping to gafgyt.udp at round
+4. The bottom row zooms to rounds 1-20, where the entire transition happens; after round 20 the trajectories
+are flat for the remaining 180 rounds.
+SSFL reproduction report                                                                                                                                      24
+
+
+
+                                                                             Test-set gafgyt.tcp / gafgyt.udp confusion trajectory
+
+                                                  Scenario 1                                        Scenario 2                            Scenario 3
+                                       100
+
+
+
+
+Percent of that class's test samples
+                                       80
+
+
+
+                                       60                  gafgyt.tcp recall
+                                                           gafgyt.udp recall
+                                                           tcp predicted as udp
+                                                           udp predicted as tcp
+                                       40
+
+
+
+                                       20
+
+
+
+                                        0
+
+                                             50     100        150            200              50     100        150      200        50     100        150   200
+                                              Communication round                               Communication round                   Communication round
+
+
+
+
+Figure 15 (F15). gafgyt.tcp / gafgyt.udp confusion trajectory on the test set. Solid lines are
+per-class recall; dashed lines are the share of that class predicted as its partner. Recall and mis-assignment
+are near-perfect mirror images, confirming the errors go almost entirely to the partner class rather than
+scattering across the other nine.
+                                                                                                                                                                                            SSFL reproduction report
+Table 21 (T21). Cost of the gafgyt.tcp / gafgyt.udp collapse under three scoring conventions. ’Pair merged’ treats {gafgyt.tcp, gafgyt.udp} as a single
+’gafgyt flooding’ class – the coarser taxonomy the model has actually learned. ’Pair dropped’ averages the other nine classes only. ’First consensus collapse’ is the first
+round from which the losing class receives fewer than 18 (1 percent of 1,800) consensus pseudo-labels for the remainder of the run; it precedes the corresponding test-set
+recall collapse. Column key: ’rec’ = recall; ’Macro F1’, ’F1 mrg’ (pair merged), ’F1 drop’ (pair dropped), ’Acc mrg’ and ’Acc’ are percentages; ’Pair prec/rec/F1’
+score the merged pair as one class (fractions); ’Rec cl rd’ / ’Cons cl rd’ are the first rounds of test-set recall collapse and consensus collapse.
+
+                 Scenario Collapsed    Survivor       TCP rec UDP rec TCP F1 UDP F1 Macro F1 F1 mrg F1 drop Pair prec Pair rec Pair F1 Acc mrg Acc                   Rec cl rd Cons cl rd
+
+                 1       4 (gafgyt.tcp) 5 (gafgyt.udp) 0.0000   1.0000   0.0000   0.6665   85.8856   97.7990   97.5652   0.9989   0.9992   0.9990   98.0169   87.9213 4       4
+                 2       5 (gafgyt.udp) 4 (gafgyt.tcp) 0.9983   0.0000   0.6656   0.0000   81.0003   92.4295   91.6053   0.9978   0.9992   0.9985   93.8034   83.6910 10      10
+                 3       5 (gafgyt.udp) 4 (gafgyt.tcp) 0.9983   0.0000   0.6652   0.0000   81.6849   93.1891   92.4462   0.9983   0.9992   0.9988   93.8764   83.7640 1       3
+
+
+
+
+                                                                                                                                                                                            25
+SSFL reproduction report                                                                                                                26
+
+
+
+18. Pseudo-label consensus analysis
+
+Outside the collapsed pair, the consensus mechanism works well. The fraction of open-set samples with
+a valid global pseudo-label (Figure F7) climbs above 99% within the first rounds and stays there – final
+values 99.82% / 99.93% / 99.60% – so the median-threshold discriminator filter rejects almost nothing at
+equilibrium. Figure F13 shows the global pseudo-label class distribution over rounds: after the first ˜10
+rounds it is essentially stationary, with each healthy class holding close to its true open-set share (900 for
+benign and each gafgyt class, 700 for each mirai class) and the surviving flooding class holding ˜1,800. Table
+T13 quantifies per-class pseudo-label counts at milestone rounds against the known open-set composition:
+healthy classes deviate by at most a few samples, confirming that the consensus is accurate wherever it has
+not merged.
+The one dynamic worth flagging: the collapse happens while the valid rate is climbing – by the time the filter
+is passing 99% of samples, the merged labeling is already locked in. The validity mask therefore provides no
+protection against consensus collapse; it filters low-confidence individual proposals, not systematically wrong
+confident ones.
+
+
+                                                              Fraction of the open set receiving a valid consensus pseudo-label
+
+
+
+
+ Valid consensus labels (% of 8,900 open samples)
+                                                    100
+
+                                                    98
+
+                                                    96
+
+                                                    94
+
+                                                    92
+
+                                                    90
+
+                                                    88
+                                                                                                                           Scenario 1
+                                                    86                                                                     Scenario 2
+                                                                                                                           Scenario 3
+                                                    84
+                                                          0     25       50       75    100        125        150       175       200
+                                                                                   Communication round
+
+
+Figure 7 (F7). Valid pseudo-label rate versus round. A sample is invalid when the discriminator
+marks it unfamiliar for every participating client, so no vote is cast. Invalid samples are masked out of the
+distillation loss.
+SSFL reproduction report                                                                                                                                                        27
+
+
+
+                                                                                Consensus pseudo-label class distribution over rounds
+
+                                                          Scenario 1                                           Scenario 2                                   Scenario 3
+
+
+
+
+Open-set samples assigned (of 8,900)
+                                       8000
+
+
+
+
+                                       6000
+
+
+
+
+                                       4000
+
+
+
+
+                                       2000
+
+
+
+
+                                          0
+                                                  50     100        150           200                     50     100        150       200              50     100        150   200
+                                                   Communication round                                     Communication round                          Communication round
+                                                   Ben.         G_Co     G_Ju       G_Sc          G_TCP        G_UDP          M_Ack   M_Sc     M_Syn     M_UDP      M_UDPp
+
+
+
+
+Figure 13 (F13). Consensus pseudo-label class distribution over rounds. Stacked counts of the
+server’s majority-vote label on the 8,900-sample open set, read from the per-round aggregation-audit arrays.
+The ground-truth distribution is 900 samples for each of the six gafgyt/benign classes and 700 for each mirai
+class. Any band that vanishes marks a class the federation stopped agreeing on.
+
+Table 13 (T13). Consensus pseudo-label counts for gafgyt.tcp and gafgyt.udp on the 8,900-
+sample open set. The open set contains exactly 900 gafgyt.tcp and 900 gafgyt.udp samples (9 devices x
+100), so the merged total should be 1,800 if the two classes are jointly recovered. Read from the per-round
+aggregation-audit .npz files, counting only samples whose validity mask is true.
+
+                                              Scenario Round Label 4 (gafgyt.tcp) Label 5 (gafgyt.udp) 4+5 merged total Valid pseudo-labels Valid rate (%)
+
+                                              1           1       3382                     0                           3382             8570               96.29
+                                              1           10      0                        1800                        1800             8898               99.98
+                                              1           25      0                        1801                        1801             8897               99.97
+                                              1           50      0                        1800                        1800             8894               99.93
+                                              1           75      0                        1800                        1800             8894               99.93
+                                              1           100     0                        1799                        1799             8891               99.90
+                                              1           125     0                        1799                        1799             8892               99.91
+                                              1           150     0                        1798                        1798             8889               99.88
+                                              1           175     1                        1798                        1799             8889               99.88
+                                              1           196     0                        1799                        1799             8884               99.82
+                                              1           200     1                        1798                        1799             8884               99.82
+                                              2           1       3007                     0                           3007             7533               84.64
+                                              2           10      1799                     2                           1801             8900               100.00
+                                              2           25      1799                     2                           1801             8893               99.92
+                                              2           50      1798                     3                           1801             8896               99.96
+                                              2           75      1799                     2                           1801             8895               99.94
+                                              2           100     1799                     2                           1801             8895               99.94
+                                              2           125     1798                     2                           1800             8895               99.94
+                                              2           150     1798                     1                           1799             8894               99.93
+                                              2           175     1798                     1                           1799             8897               99.97
+                                              2           196     1798                     1                           1799             8894               99.93
+                                              2           200     1798                     3                           1801             8894               99.93
+                                              3           1       2913                     324                         3237             8540               95.96
+                                              3           10      1798                     3                           1801             8898               99.98
+                                              3           25      1799                     1                           1800             8896               99.96
+                                              3           50      1800                     0                           1800             8895               99.94
+                                              3           75      1798                     2                           1800             8893               99.92
+                                              3           100     1798                     2                           1800             8883               99.81
+                                              3           125     1798                     1                           1799             8890               99.89
+                                              3           150     1798                     1                           1799             8885               99.83
+                                              3           175     1798                     0                           1798             8874               99.71
+                                              3           196     1798                     0                           1798             8884               99.82
+                                              3           200     1798                     0                           1798             8864               99.60
+
+
+
+
+19. Loss and calibration discussion
+
+Figure F5 plots server-side test loss (linear and log views) and Figure F6 the client-side training/distillation
+loss; Table T22 collects window means. All three runs show the same qualitative decoupling: test loss
+bottoms out very early (rounds 4-13, minima 1.90 / 1.17 / 1.65) and then trends upward for the rest of
+training, while test accuracy keeps improving. In scenarios 1 and 2 the drift is bounded – last-50-round loss
+means of 4.11 and 4.12, with the final rounds no worse than mid-training. Scenario 3 is different in degree,
+not kind: its loss diverges monotonically in windows (5.82 over rounds 101-150, 12.76 over 151-200, final
+27.02), with 33 of the last 100 rounds above 10.
+The signature – rising cross-entropy at stable-or-improving accuracy – indicates growing overconfidence:
+the model concentrates probability mass on its predicted class, so each residual error contributes an exploding
+SSFL reproduction report                                                                                                                                               28
+
+
+
+log-loss term, and the collapsed UDP class guarantees a permanent floor of confidently wrong predictions (900
+test samples predicted as TCP with high confidence). Five local epochs per round of distillation against hard
+pseudo-labels is exactly the training pressure that sharpens outputs this way, and scenario 3’s Dirichlet clients
+– many holding a few dominant classes – sharpen fastest. Two caveats: first, since per-sample probability
+vectors were not stored, calibration error cannot be directly measured from the transferred artifacts;
+the overconfidence account is an inference from the loss/accuracy decoupling, not a computed ECE. Second,
+the training loss (Figure F6) stays small and flat everywhere, confirming the divergence is a test-set confidence
+phenomenon, not optimizer instability. Practical implication: test loss is not a usable early-stopping
+or model-selection signal for this protocol; accuracy or F1 must be monitored directly.
+
+                                                                    Centralised test loss versus round
+
+                                                    Linear scale                                                                      Logarithmic scale
+                                                                                                             3 × 101
+                                    Scenario 1
+                           25       Scenario 2
+                                                                                                             2 × 101
+                                    Scenario 3
+
+
+
+
+ Test cross-entropy loss                                                           Test cross-entropy loss
+                           20
+                                                                                                                101
+
+
+                           15                                                                                6 × 100
+
+                                                                                                             4 × 100
+                           10
+                                                                                                             3 × 100
+
+
+                           5                                                                                 2 × 100
+
+
+
+                           0
+                                0   25    50       75  100    125    150   175   200                                   0   25   50     75  100    125    150   175   200
+                                                 Communication round                                                                 Communication round
+
+
+
+Figure 5 (F5). Centralised test loss versus round. Loss is the server-side cross-entropy on the 17,800-
+sample test split. In all three scenarios the minimum occurs within the first 15 rounds; loss then follows a
+noisy upward trend while accuracy is still improving, the signature of a progressively over-confident classifier.
+Scenarios 1 and 2 level off (round 151-200 means of 4.11 and 4.12), but scenario 3 diverges after roughly
+round 150: its round-101-150 mean is 5.82, its round-151-175 mean 9.11, and its round-176-200 mean 16.41,
+ending at 27.02. The logarithmic panel is included because that divergence otherwise compresses scenarios 1
+and 2 into a single band.
+SSFL reproduction report                                                                                                          29
+
+
+
+
+                                                     Client-side distillation (train) loss versus round, log scale
+
+                                 6 × 10−1                                                                            Scenario 1
+                                                                                                                     Scenario 2
+                                 4 × 10−1                                                                            Scenario 3
+                                 3 × 10−1
+
+
+
+
+ Mean client distillation loss
+                                 2 × 10−1
+
+
+
+                                    10−1
+
+
+                                 6 × 10−2
+
+                                 4 × 10−2
+                                 3 × 10−2
+
+                                 2 × 10−2
+
+
+
+                                            0   25          50         75    100        125          150       175          200
+                                                                        Communication round
+
+
+Figure 6 (F6). Client distillation loss versus round. Mean over participating clients of the local
+training loss on the distillation objective. Unlike test loss, this decreases monotonically: clients fit the
+server-issued consensus labels increasingly well, including where those labels are wrong.
+                                                                                                                                                                                            SSFL reproduction report
+Table 22 (T22). Test-loss trajectory diagnostics: rising loss alongside rising accuracy. In every scenario the minimum test loss occurs within the first 15
+rounds while accuracy is still low, after which loss follows a noisy upward trend even as accuracy keeps improving. Scenarios 1 and 2 level off (round 151-200 means
+of 4.11 and 4.12); scenario 3 instead diverges after roughly round 150, its window means rising 5.82 -> 9.11 -> 16.41 over rounds 101-150, 151-175 and 176-200. The
+’Fin/min’ ratio should be read together with these window means, because the final round is a single noisy draw from a wide distribution. Column key: all loss values
+are centralised test cross-entropy except ’Train loss’ (client distillation); ’Min/Max rd’ = round of the loss extremum; ’Acc @min’ = accuracy (%) at the min-loss
+round; ’Acc’ = final accuracy (%); ’L50/L100 slope’ = per-round linear loss slope over the last 50/100 rounds; ’Valid rate’ / ’Valid L50’ = final and last-50-mean
+valid pseudo-label fraction; ’rA-B’ = mean test loss over rounds A to B.
+
+            Scenario Final loss Min loss Min rd Max loss Max rd Fin/min Acc @min Acc      Train loss L50 slope L100 slope Valid rate Valid L50 r1-50   r51-100 r101-150 r151-175 r176-200
+
+            1       3.1989    1.9043   4     18.5790   1      1.6798    66.5337   87.9213 0.0175    -0.0071   -0.0317     0.9982    0.9985     4.1745 5.2866   5.8448   4.1059   4.1229
+            2       3.3226    1.1715   12    14.6340   2      2.8362    72.8708   83.6910 0.0285    -0.0318   0.0055      0.9993    0.9996     3.0577 3.0014   3.6339   4.6611   3.5853
+            3       27.0170   1.6531   13    27.0170   200    16.3430   73.0000   83.7640 0.0341    0.2173    0.1380      0.9960    0.9978     3.1034 3.7733   5.8182   9.1068   16.4053
+
+
+
+
+                                                                                                                                                                                            30
+SSFL reproduction report                                                                                       31
+
+
+
+20. Communication-efficiency analysis
+
+Beyond the paper-convention comparison of Section 12, the transferred communication records allow a
+full federation-wide accounting. Three conventions are reported throughout (Table T14): the paper’s
+representative-client train uplink; logical bytes (every payload byte, all clients, both phases and directions);
+and serialized bytes (what Flower actually framed onto the wire; about 6.2% above logical). Per round,
+each client uploads 8,900 bytes of int8 pseudo-labels and downloads 17,800 bytes of global labels plus validity
+mask, so federation totals scale with client count: 137.5 MiB logical (146.1 MiB serialized) for scenario 1’s 27
+clients, and 453.2 MiB (481.5 MiB) for the 89-client scenarios (identical for scenarios 2 and 3 by construction
+– Figure F16’s overlapping curves).
+Figure F17 plots accuracy against cumulative traffic: scenario 1 dominates not only per round but per byte,
+since it has fewer clients and higher accuracy. Even the largest total – 482 MiB over 20.9 hours – averages
+under 7 KB/s federation-wide, supporting the paper’s core efficiency claim under every accounting convention.
+The breakdown by phase and direction is in Table T7.
+Table 7 (T7). Communication breakdown by protocol phase and direction. The train uplink
+carries the 8,900-entry int8 pseudo-label vector; the evaluate downlink carries the 8,900-entry global label
+vector plus its 8,900-entry boolean validity mask (17,800 bytes). The train downlink and evaluate uplink
+carry no tensor payload, only Flower message framing, which is why their logical byte count is zero but their
+serialized count is not.
+
+          Scenario Phase       Direction          Logical (MiB) Serialized (MiB) Paper-accounting (MiB) Rows
+          1         evaluate   client to server   0.0000       0.4223           0.0000                 5400
+          1         evaluate   server to client   91.6672      95.7854          91.6672                5400
+          1         train      client to server   45.8336      47.5689          45.8336                5400
+          1         train      server to client   0.0000       2.2901           0.0000                 5400
+          2         evaluate   client to server   0.0000       1.3919           0.0000                 17800
+          2         evaluate   server to client   302.1622     315.7711         302.1622               17800
+          2         train      client to server   151.0811     156.8010         151.0811               17800
+          2         train      server to client   0.0000       7.5827           0.0000                 17800
+          3         evaluate   client to server   0.0000       1.3920           0.0000                 17800
+          3         evaluate   server to client   302.1622     315.7711         302.1622               17800
+          3         train      client to server   151.0811     156.8007         151.0811               17800
+          3         train      server to client   0.0000       7.5827           0.0000                 17800
+                                                                                                                                                                                         SSFL reproduction report
+Table 14 (T14). Communication milestones under three accounting conventions and two byte units. C@Dˆo (the paper’s 0.96 MB cost of distributing
+the open dataset) is absent by construction: in this implementation every client reads the open split from shared local storage rather than receiving it through Flower,
+so no corresponding bytes exist in communication.parquet. 8,900 float64 values would be 0.068 MiB and 8,900 x 115 float64 features would be 7.81 MiB, so neither
+reconstructs 0.96 MB from the transferred artifacts.
+
+           Scenario Quantity   Round Paper (MB, unit unstated) Repro paper-accounting (MiB) Repro paper-accounting (MB = 10ˆ6 B) Repro federation logical (MiB) Repro serialized (MiB)
+
+           1       C@50        3      0.010000                  0.025463                     0.026700                              2.062511                     2.190896
+           1       C@75        52     0.020000                  0.441360                     0.462800                              35.750198                    37.975510
+           1       C@Top-Acc   200    0.550000                  1.697540                     1.780000                              137.500763                   146.066675
+           2       C@50        4      0.010000                  0.033951                     0.035600                              9.064865                     9.630298
+           2       C@75        116    0.020000                  0.984573                     1.032400                              262.881088                   279.292388
+           2       C@Top-Acc   196    0.490000                  1.663589                     1.744400                              444.178391                   471.915478
+           3       C@50        3      0.010000                  0.025463                     0.026700                              6.798649                     7.222744
+           3       C@75        33     0.040000                  0.280094                     0.293700                              74.785137                    79.451190
+           3       C@Top-Acc   196    0.470000                  1.663589                     1.744400                              444.178391                   471.915273
+
+
+
+
+                                                                                                                                                                                         32
+SSFL reproduction report                                                                                                                                                                                             33
+
+
+
+                                                            Cumulative communication cost under two accounting conventions
+
+                                     Federation-wide traffic (all clients, both phases)                                                                 Paper accounting: representative-client train uplink
+                            500                                                                                                   1.75
+                                         S1 logical                                                                                                          Scenario 1
+                                         S1 serialized                                                                                                       Scenario 2
+                                         S2 logical                                                                                                          Scenario 3
+                                                                                                                                  1.50
+                                         S2 serialized
+                            400
+                                         S3 logical
+
+
+
+
+ Cumulative traffic (MiB)                                                                         Cumulative traffic (MiB)
+                                         S3 serialized                                                                            1.25
+
+                            300
+                                                                                                                                  1.00
+
+
+                                                                                                                                  0.75
+                            200
+
+                                                                                                                                  0.50
+                            100
+                                                                                                                                  0.25
+
+
+                             0                                                                                                    0.00
+
+                                         25       50       75  100     125   150    175     200                                                              25       50      75  100     125   150     175      200
+                                                         Communication round                                                                                                Communication round
+
+
+
+Figure 16 (F16). Cumulative communication versus round. Left: every payload byte, summed over
+all clients, phases and directions; solid is the logical tensor payload, dashed is what Flower actually serialised
+onto the wire (6.2% higher, message framing). Right: the paper’s Table IV convention – one client’s 8,900-
+byte uplink per round – which is identical for all three scenarios by construction and reaches 1.6975 MiB at
+round 200. Note the two panels differ by roughly two orders of magnitude; they are not alternative estimates
+of the same quantity. Scenarios 2 and 3 coincide exactly in the left panel because both use 89 clients and
+identical payload shapes, and all three coincide exactly in the right panel; overlapping lines are drawn at
+decreasing width so each remains visible.
+
+
+                                                                   Accuracy as a function of cumulative communication
+
+                                                         Paper accounting                                                                                                 Federation-wide accounting
+                            90                                                                                                                     90
+
+
+                            80                                                                                                                     80
+
+
+                            70                                                                                                                     70
+
+
+
+
+ Top-1 test accuracy (%)                                                                                                 Top-1 test accuracy (%)
+                            60                                                                                                                     60
+
+
+                            50                                                                                                                     50
+
+
+                            40                                                                                                                     40
+
+
+                            30                                                                                                                     30
+                                                                                   Scenario 1                                                                                                           Scenario 1
+                                                                                   Scenario 2                                                                                                           Scenario 2
+                            20                                                                                                                     20
+                                                                                   Scenario 3                                                                                                           Scenario 3
+
+                                  0.00    0.25  0.50    0.75   1.00    1.25    1.50        1.75                                                          0         100         200         300           400
+                                          Cumulative paper-accounting uplink (MiB)                                                                            Cumulative federation-wide logical traffic (MiB)
+
+
+
+Figure 17 (F17). Accuracy versus cumulative communication. Under the paper’s per-client ac-
+counting the three scenarios are indistinguishable on the x-axis, so the curves separate only vertically. Under
+federation-wide accounting scenario 1 is far cheaper for the same accuracy because it has 27 clients rather
+than 89.
+
+
+21. Runtime and GPU analysis
+
+Total wall-clock time was 7.96 h (scenario 1), 20.95 h (scenario 2) and 20.85 h (scenario 3) – about 2.6x longer
+for the 89-client scenarios, which run 3.3x the clients at the same concurrency cap of 8. Round durations
+SSFL reproduction report                                                                             34
+
+
+
+(Figure F18) are remarkably uniform: mean 143 s / 377 s / 375 s with standard deviations of 0.9-4.0 s
+and zero scheduling gaps between rounds (maximum inter-round gap 1.4 ms across all 600 rounds) – the
+pipeline was never stalled.
+GPU telemetry at 1 Hz (27,995 / 73,558 / 73,202 samples) shows the device saturated and comfortable
+(Figures F19, F20): utilization means 95.2-96.4% with only isolated one-to-two-second troughs at phase
+boundaries; VRAM flat at about 4.26-4.28 GiB of the RTX 3090’s 23.6 GiB (18%) – concurrency, not
+memory, was the binding constraint; temperature never above 53 C and board power steady near 178 W,
+roughly half the card’s rating. A higher max concurrent clients would very likely shorten the 89-client
+runs substantially (Section 25). Since the paper used the same GPU model but reports no runtimes, no
+runtime comparison to the paper is possible.
+                                                                                                                                                                                 SSFL reproduction report
+Table 8 (T8). Runtime and GPU telemetry per scenario. Derived from the one-second nvidia-smi sampler in the server telemetry stream. Column key: ’Rd’
+columns are per-round wall-clock durations in seconds; ’Util’ is GPU utilisation in percent; ’VRAM’ is device memory in GiB; ’Temp’ is GPU temperature in Celsius;
+’Pow’ is board power in watts; ’Samples’ is the number of one-second telemetry samples; ’Idle gap’ is the largest wall-clock interval between the end of one round and
+the start of the next.
+
+       Scenario Runtime (h) Rd mean (s) Rd p95 (s) Rd max (s) Util mean Util p95 Util max VRAM mean VRAM peak Temp mean Temp max Pow mean Pow p95 Pow max Samples Idle gap (s)
+
+       1       7.955      143.197     144.192   151.026    95.201   99.000   99.000   4.260      4.262      50.143     51.000    178.191   180.900   181.960   27995   0.001
+       2       20.950     377.102     380.161   380.894    96.409   99.000   99.000   4.260      4.262      50.400     53.000    178.732   180.790   183.380   73558   0.001
+       3       20.850     375.297     379.040   382.882    96.424   99.000   99.000   4.276      4.277      50.431     52.000    178.845   180.890   182.030   73202   0.001
+
+
+
+
+                                                                                                                                                                                 35
+SSFL reproduction report                                                                                                                                                                           36
+
+
+
+                                                                     Round-duration distribution and trace
+
+                                                     Distribution                                                                                         Per-round trace
+
+
+
+                                 350                                                                          350
+
+
+
+
+ Round wall-clock duration (s)
+                                                                                         Round duration (s)
+                                 300                                                                          300
+                                                                                                                                                                                      Scenario 1
+                                                                                                                                                                                      Scenario 2
+                                 250                                                                          250                                                                     Scenario 3
+
+
+
+                                 200                                                                          200
+
+
+
+                                 150                                                                          150
+
+
+                                           S1             S2                 S3                                          25           50                75  100     125   150           175     200
+                                                                                                                                                      Communication round
+
+
+
+Figure 18 (F18). Round-duration distribution and per-round trace. Durations are tightly clustered
+and show no upward drift – if anything scenarios 2 and 3 speed up slightly over the last 50 rounds – so the
+long total runtimes reflect sustained per-round cost rather than a leak or progressive slowdown. The largest
+gap between the end of one round and the start of the next is 0.00 s in all three runs, so no wall-clock time
+is spent idle between rounds.
+
+
+                                                                              GPU utilisation over time
+
+                                                    Whole run, 5-minute rolling mean                                                                      Ten-minute window, raw 1 Hz samples
+                                 100                                                                                                                100
+
+
+
+                                 80                                                                                                                 80
+
+
+
+
+ GPU utilisation (%)                                                                                                          GPU utilisation (%)
+                                 60                                                                                                                 60
+
+
+
+                                 40                                                                                                                 40
+
+
+
+                                 20                                                                             Scenario 1                          20
+                                                                                                                Scenario 2
+                                                                                                                Scenario 3
+                                  0                                                                                                                  0
+                                       0        5                10                 15                              20                                     0      2      4        6       8      10
+                                                        Elapsed wall-clock time (h)                                                                       Minutes elapsed, starting 1 h into the run
+
+
+
+
+Figure 19 (F19). GPU utilisation over time. Sampled at roughly 1 Hz from nvidia-smi by the server
+telemetry thread. Left: a five-minute rolling mean over the whole run; a shorter window is not enough to
+smooth the per-round structure, because one round takes 143 s in scenario 1 and about 376 s in scenarios
+2 and 3. Right: ten minutes of raw samples, which shows that the oscillation is the periodic train/evaluate
+round structure rather than stalling – utilisation sits at 97-99% and drops to 13-20% only in isolated one-
+to-two-second troughs at phase boundaries. Mean utilisation is 95.2% in scenario 1 and 96.4% in scenarios 2
+and 3, so the GPU, not the federation orchestration, is the bottleneck.
+SSFL reproduction report                                                                                                                  37
+
+
+
+
+                                                   GPU memory, temperature and power over time
+
+
+
+
+                                 25
+
+
+
+
+           VRAM used (GiB)
+                                 20
+
+                                 15
+                                                                  Scenario 1     Scenario 2     Scenario 3   device capacity (23.6 GiB)
+
+                                 10
+
+                                 5
+
+                                 0
+
+
+
+
+           GPU temperature (C)
+                                 50
+
+
+                                 45
+
+
+                                 40
+
+
+                                 35
+
+
+
+                          180
+
+
+
+
+ Board power draw (W)
+                          160
+
+
+                          140
+
+
+                          120
+
+
+                                      0               5                    10                      15                      20
+                                                                  Elapsed wall-clock time (h)
+
+
+
+Figure 20 (F20). GPU memory, temperature and power over time. VRAM is nvidia-smi’s device-
+wide memory.used, which includes the CUDA context and every Ray worker, not just tensors. It sits near
+4.3 GiB of the RTX 3090’s 23.6 GiB throughout, so memory was never the constraint. Temperature peaks
+at 51-53 C and board power averages about 179 W against a 350 W rating.
+
+
+22. Deviations and reproducibility warnings
+
+Deviations from the paper, and internal reproducibility gaps, in decreasing order of likely impact on the
+comparison:
+
+                         Software generations apart: Python 3.12.13 / torch 2.6.0+cu124 versus the paper’s Python 3.7 /
+                          PyTorch 1.x. Different kernels, initializers and numerics; a deliberate repository policy, but it makes
+                          bit-level agreement with the paper impossible in principle.
+                         Single seed: one run per scenario, seed 2023. Which flooding sibling survives the collapse already
+                          varies across scenarios, demonstrating that run-to-run variance is material – and unquantified.
+                         Batch size 80 vs 100: the paper contradicts itself; 80 (Table I) was chosen over 100 (prose).
+                         Determinism not end-to-end: deterministic kernels are configured in the server process only; Ray
+                          client actors get seeds but not torch.use deterministic algorithms. The environment snapshot
+                          additionally predates determinism configuration, so recorded flags cannot confirm the runtime state.
+                          Re-running would not be guaranteed bit-identical.
+SSFL reproduction report                                                                                     38
+
+
+
+    Dirty working tree: git dirty = true at commit 78df829dd1ce and an empty code version.json
+     mean the exact executed code is not pinned.
+    Open set via shared storage: eliminates the paper’s C@D-o cost from the record (Section 12).
+    Checkpoint policy: milestones plus latest retention; and no checkpoints (or weights of any kind)
+     were transferred, so weight-level analysis is impossible here by design.
+    Mini-dataset sampling: the 1,000-records-per-subset mini-N-BaIoT is the repository’s paper-faithful
+     construction, but the paper’s own sampling seed is unknown, so the underlying data sample necessarily
+     differs.
+
+
+23. Threats to validity
+
+    No statistical basis for small differences. With one seed per scenario, differences of a point or two
+     between reproduction and paper (or between scenarios) are within plausible seed noise; only the large,
+     structural findings (the collapse, the convergence-shape difference, the loss divergence) are robust to
+     this threat. No significance is claimed anywhere.
+    Paper ambiguities force assumptions: averaging convention behind Table II’s precision (Section
+     10), batch size, MB unit (10ˆ6 vs 2ˆ20 bytes – both reported in Table T14), and the exact byte encoding
+     behind Table IV.
+    Different underlying sample of N-BaIoT (unknown paper sampling), so per-class test sets differ
+     from the paper’s even at identical protocol behavior.
+    Raw features and weights not transferred: the near-duplicate-features explanation for the
+     TCP/UDP merge, and any weight-space analysis, remain unverifiable from this artifact set.
+    Transcription surface: paper values were re-typed from the PDF; each was verified against the PDF
+     text, but OCR-level errors in the source PDF itself would propagate.
+    Analysis code as a single point of failure: all derived numbers come from one script
+     (scripts/build report.py); it cross-checks itself against the suite report and run summaries
+     (Section 8), and key aggregates were independently spot-verified during development, but it is one
+     implementation.
+
+
+24. Conclusions
+
+The transferred runs reproduce the paper’s headline claims in substance: final accuracy within half
+a point in two of three scenarios (above the paper in one), macro F1 within a point in those two, the paper’s
+non-IID ordering of scenarios preserved, and the label-only communication design confirmed at three to four
+orders of magnitude below parameter exchange. Scenario 2 misses its target by 3.01 points, and mid-training
+convergence is uniformly slower than Table III.
+The reproduction also surfaces a structural failure mode the paper does not report: hard-label majority-vote
+consensus permanently merges the two gafgyt flooding classes in every scenario within ten rounds, costing
+roughly ten points of headline accuracy and most of the precision gap versus Table II. Whether the paper’s
+runs avoided this (by seed luck, by feature differences in their sample, or by an unstated mechanism) cannot
+be determined from the paper. Secondary findings – test-loss divergence under stable accuracy (extreme in
+scenario 3), the ineffectiveness of the validity mask against confident consensus errors, and the absorbing
+nature of the merged state – all point at the same design pressure: hard pseudo-labels plus majority voting
+discard exactly the uncertainty information that would let the federation recover a lost class.
+
+
+25. Recommended next experiments
+
+In priority order:
+
+    A. Multi-seed replication (highest value, lowest novelty). Re-run all three scenarios with at
+     least 3-5 seeds. This is the only way to (i) attach uncertainty to every comparison in this report, (ii)
+     measure the frequency of the TCP/UDP collapse and the survivor distribution, and (iii) test whether
+     scenario 2’s 3-point deficit is systematic or seed luck. The existing suite tooling supports this directly.
+SSFL reproduction report                                                                                    39
+
+
+
+    B. Collapse mitigation ablations. The repository already exposes the relevant switches: soft-label
+     representation (ssfl label representation), voting mode, discriminator mode, and threshold policy.
+     Candidate interventions, cheapest first: soft labels (retain minority-vote mass); per-class rather than
+     global median confidence thresholds; class-presence monitoring with a guard that freezes distillation for
+     a class whose global count falls below a floor. Success criterion: both flooding classes retain nonzero
+     recall at round 200 without losing the ˜98% merged-pair detection quality.
+    C. Instrument calibration and the scenario 3 loss divergence. Store per-sample probability
+     vectors (or at least per-class confidence histograms) at milestone rounds, enabling a real ECE mea-
+     surement; add temperature scaling or label smoothing to distillation and observe the effect on the loss
+     divergence. Also worth one cheap run: raise max concurrent clients above 8 to cut the 20.9-hour
+     89-client wall time; GPU headroom (Section 21) suggests near-linear gains.
+
+
+26. Appendix
+
+The appendix collects full-precision reference material. All tables are also available as CSV files under
+tables/ at full floating-point precision; figures as PNG (300 DPI), PDF and SVG under figures/.
+
+26.1. A.1 Full resolved configurations
+                                                                                                                                                                                                                SSFL reproduction report
+Table 19 (T19). Full resolved configuration for each scenario. Verbatim from each run’s resolved config.yaml. data path and output path are the absolute
+paths on the RTX 3090 host.
+
+Key                               S1                                                        S2                                                        S3
+
+algorithm                         ssfl                                                      ssfl                                                      ssfl
+backbone                          cnn                                                       cnn                                                       cnn
+batch size                        80                                                        80                                                        80
+checkpoint interval               1                                                         1                                                         1
+checkpoint rounds                 [10, 50, 100, 150, 200]                                   [10, 50, 100, 150, 200]                                   [10, 50, 100, 150, 200]
+client num cpus                   1                                                         1                                                         1
+client num gpus                   0.125                                                     0.125                                                     0.125
+data path                         /home/ayla/Desktop/SSFL/Federated-learning-with-psuedo-   /home/ayla/Desktop/SSFL/Federated-learning-with-psuedo-   /home/ayla/Desktop/SSFL/Federated-learning-with-psuedo-
+                                  labeling-master/artifacts/data                            labeling-master/artifacts/data                            labeling-master/artifacts/data
+deterministic                     True                                                      True                                                      True
+device                            cuda                                                      cuda                                                      cuda
+dsfl temperature                  0.1                                                       0.1                                                       0.1
+learning rate                     0.0001                                                    0.0001                                                    0.0001
+local epochs                      5                                                         5                                                         5
+log every batch                   False                                                     False                                                     False
+logging interval                  1                                                         1                                                         1
+max concurrent clients            8                                                         8                                                         8
+num server rounds                 200                                                       200                                                       200
+output path                       /home/ayla/Desktop/SSFL/Federated-learning-with-psuedo-   /home/ayla/Desktop/SSFL/Federated-learning-with-psuedo-   /home/ayla/Desktop/SSFL/Federated-learning-with-psuedo-
+                                  labeling-master/artifacts/runs                            labeling-master/artifacts/runs                            labeling-master/artifacts/runs
+paper text batch                  False                                                     False                                                     False
+profile                           ssfl cnn s1                                               ssfl cnn s2                                               ssfl cnn s3
+resume from
+run kind                          paper                                                     paper                                                     paper
+scenario                          1                                                         2                                                         3
+seed                              2023                                                      2023                                                      2023
+ssfl discriminator mode           enabled                                                   enabled                                                   enabled
+ssfl label representation         hard                                                      hard                                                      hard
+ssfl soft label round decimals
+ssfl threshold policy             median                                                    median                                                    median
+ssfl voting mode                  enabled                                                   enabled                                                   enabled
+system monitor interval seconds   1.0                                                       1.0                                                       1.0
+
+
+
+
+                                                                                                                                                                                                                40
+SSFL reproduction report                                                                                  41
+
+
+
+26.2. A.2 Complete metric tables
+
+The complete per-round records are provided as CSV (too large to typeset):
+Table 15 (T15). Full per-round metrics for all three scenarios (600 rows). CSV only. Provided as
+tables/t15 full metrics per round.csv (600 rows); too large to typeset.
+Table 16 (T16). Full per-round per-class metrics for all three scenarios (6,600 rows). CSV only.
+Provided as tables/t16 full per class per round.csv (6600 rows); too large to typeset.
+
+Table 17 (T17). Per-round aggregation-audit summary for all three scenarios (600 rows). CSV
+only. Provided as tables/t17 aggregation audit per round.csv (600 rows); too large to typeset.
+Table 18 (T18). Round-by-round gafgyt.tcp / gafgyt.udp confusion trajectory. CSV only. Pro-
+vided as tables/t18 tcp udp confusion trajectory.csv (600 rows); too large to typeset.
+
+
+26.3. A.3 Artifact inventory
+
+Table 20 (T20). Transferred artifact inventory per scenario. Grouped by artifact kind. No raw
+feature arrays, no model checkpoints and no private client samples were transferred.
+
+     Scenario kind                                                                    Files Total bytes
+     1         attempts/aggregation audit/ssfl aggregation round N.npz                200   3608676
+     1         attempts/events.jsonl.gz                                               1     19122
+     1         attempts/telemetry/clients/<client>.jsonl.gz                           27    10758238
+     1         attempts/telemetry/server.jsonl.gz                                     1     1921847
+     1         code version.json                                                      1     2
+     1         communication.parquet                                                  1     190076
+     1         confusion matrices.npz                                                 1     243406
+     1         current attempt.json                                                   1     213
+     1         dataset manifest.json                                                  1     11904
+     1         environment.json                                                       1     1140
+     1         metrics.parquet                                                        1     34699
+     1         per class metrics.parquet                                              1     41851
+     1         resolved config.yaml                                                   1     835
+     1         summary.json                                                           1     415
+     2         attempts/aggregation audit/ssfl aggregation round N.npz                200   4376228
+     2         attempts/events.jsonl.gz                                               1     19452
+     2         attempts/telemetry/clients/<client>.jsonl.gz                           89    34736600
+     2         attempts/telemetry/server.jsonl.gz                                     1     4594860
+     2         code version.json                                                      1     2
+     2         communication.parquet                                                  1     614471
+     2         confusion matrices.npz                                                 1     243406
+     2         current attempt.json                                                   1     215
+     2         dataset manifest.json                                                  1     11904
+     2         environment.json                                                       1     1140
+     2         metrics.parquet                                                        1     34827
+     2         per class metrics.parquet                                              1     43023
+     2         resolved config.yaml                                                   1     835
+     2         summary.json                                                           1     415
+     3         attempts/aggregation audit/ssfl aggregation round N.npz                200   5244140
+     3         attempts/events.jsonl.gz                                               1     19398
+     3         attempts/telemetry/clients/<client>.jsonl.gz                           89    35249451
+     3         attempts/telemetry/server.jsonl.gz                                     1     4631692
+     3         code version.json                                                      1     2
+     3         communication.parquet                                                  1     613690
+     3         confusion matrices.npz                                                 1     243406
+     3         current attempt.json                                                   1     215
+     3         dataset manifest.json                                                  1     11904
+     3         environment.json                                                       1     1140
+     3         metrics.parquet                                                        1     35156
+     3         per class metrics.parquet                                              1     41055
+     3         resolved config.yaml                                                   1     835
+     3         summary.json                                                           1     416
+
+
+
+26.4. A.4 Formulas and units
+
+    Accuracy, precision, recall and F1 are computed from the stored per-round confusion matrices; macro
+     averages weight classes equally, micro averages pool all samples, weighted averages weight by test-set
+     support. Percentages in prose are rounded to two decimals; CSVs keep full precision.
+    Percentage-point (pp) differences are arithmetic differences of percentages, reproduction minus paper.
+    Normalized accuracy AUC = trapezoidal area under accuracy versus round, divided by the 200-round
+     span.
+SSFL reproduction report                                                                                 42
+
+
+
+    MiB = 2ˆ20 bytes; MB = 10ˆ6 bytes. The paper’s unit is unstated; comparisons report both where it
+     matters (Table T14). Logical bytes = protocol payload; serialized bytes = Flower wire representation
+     including framing.
+    Paper-accounting communication = one client’s train-phase uplink (8,900 bytes per round), cumulated
+     – the convention that best matches Table IV’s construction.
+    Convergence round at threshold X = first round with accuracy >= X.
+    Window statistics (last 10/20/50 rounds) are computed over server evaluation rounds inclusive of round
+     200.
+
+26.5. A.5 Code and version metadata
+
+    Runs executed at git commit 78df829dd1ce5244126ad5eafbf13b0523fa5532 (working tree dirty) of
+     the SSFL reproduction repository; code version.json present but empty in all runs.
+    Dataset manifest hash d7966afc8a735de3050c4391d921b366eb1c655e6045f3ef2daecf06f27599fe
+     (identical across scenarios).
+    Environment: Python 3.12.13, torch 2.6.0+cu124, CUDA 12.4, cuDNN 90100, flwr 1.32.1, numpy 2.5.1,
+     pandas 3.0.5, pyarrow 25.0.0, ray 2.55.1, scikit-learn 1.9.0.
+    This report and every table/figure in it were generated by scripts/build report.py in the analysis
+     output directory; the integrity audit is validation/audit summary.json, and SHA-256 hashes of every
+     generated file are in analysis manifest.json.
+    Audit warnings, by check name: determinism call sites, s1 checkpoint retention policy,
+     s1 code version json, s1 determinism metadata, s1 git provenance, s2 checkpoint retention policy,
+     s2 code version json, s2 determinism metadata, s2 git provenance, s3 checkpoint retention policy,
+     s3 code version json, s3 determinism metadata, s3 git provenance.
+

@@ -1,0 +1,895 @@
+IEEE INTERNET OF THINGS JOURNAL, VOL. 10, NO. 10, 15 MAY 2023                                                                                                8645
+
+
+
+
+Semisupervised Federated-Learning-Based Intrusion
+     Detection Method for Internet of Things
+                      Ruijie Zhao , Graduate Student Member, IEEE, Yijun Wang , Zhi Xue,
+                 Tomoaki Ohtsuki , Senior Member, IEEE, Bamidele Adebisi , Senior Member, IEEE,
+                                      and Guan Gui , Senior Member, IEEE
+
+
+
+   Abstract—Federated learning (FL) has become an increasingly                                              I. I NTRODUCTION
+popular solution for intrusion detection to avoid data privacy
+                                                                                     NTERNET of Things (IoT) has developed rapidly in recent
+leakage in Internet of Things (IoT) edge devices. Existing FL-
+based intrusion detection methods, however, suffer from three
+limitations: 1) model parameters transmitted in each round may
+                                                                                 I   years and provides useful services in multiple applications,
+                                                                                 such as health and transportation systems. In the meantime, a
+be used to recover private data, which leads to security risks;                  great number of IoT devices lack appropriate security defenses
+2) not independent and identically distributed (non-IID) private                 and therefore, intruders can easily target many of them [1]–[6].
+data seriously adversely affect the training of FL (especially
+distillation-based FL); and 3) high communication overhead                       Thus, it is of vital importance to adopt intrusion detection
+caused by the large model size greatly hinders the actual deploy-                systems (IDS) for IoT devices. Benefiting from the develop-
+ment of the solution. To address these problems, this article                    ment of deep learning (DL) technology, DL-based methods
+develops an intrusion detection method based on a semisuper-                     have achieved great success in the field of traffic analysis and
+vised FL scheme via knowledge distillation. First, our proposed
+method leverages unlabeled data via distillation method to
+                                                                                 intrusion detection [7]–[14]. Typically, centralized DL (CDL)
+enhance the classifier performance. Second, we build a model                     techniques collect a large amount of traffic data from vari-
+based on convolutional neural networks (CNNs) for extracting                     ous IoT devices and upload these data to a central server for
+deep features of the traffic packets, and take this model as                     training a deep neural network (DNN) model, which is used
+both the classifier network and discriminator network. Third,                    for detection. Although these CDL methods can achieve high
+the discriminator is designed to improve the quality of each
+client’s predicted labels, and to avoid the failure of distilla-                 accuracy in intrusion detection task, there exists a problem
+tion training caused by a large number of incorrect predictions                  of information leakage, i.e., private-sensitive raw data are
+under private non-IID data. Moreover, the combination of the                     uploaded to the central server and possibly abused by the
+hard-label strategy and voting mechanism further reduces com-                    server. To address the problem of private data leakage of CDL,
+munication overhead. The experiments on the real-world traffic
+                                                                                 federated learning (FL) is applied in IDS recently [15]–[20].
+data set with three non-IID scenarios show that our proposed
+method can achieve better detection performance as well as lower                 In the FL framework, devices collaboratively train their local
+communication overhead than state-of-the-art methods.                            DL models through the periodical exchange and aggregation
+  Index Terms—Federated learning (FL), intrusion detection,                      of DL model parameters or gradients at the central server
+knowledge distillation, semisupervised learning.                                 without uploading their raw data. However, since traditional
+                                                                                 FL requires clients to frequently upload the parameters of
+                                                                                 the DL model, its high communication overhead seriously
+   Manuscript received 8 February 2022; revised 12 April 2022; accepted          hinders actual deployment [21]–[27]. Besides, IoT devices
+13 May 2022. Date of publication 18 May 2022; date of current version            are usually large scale, which means that a large number of
+9 May 2023. This work was supported in part by the Cyber Security from
+the National Key Research and Development Program of Shanghai Jiao Tong          devices (clients) need to upload information (e.g., gradients
+University under Grant 2019QY0703; in part by the Japan Society for the          and parameters) when applying FL, resulting in more expen-
+Promotion of Science (JSPS) KAKENHI under Grant JP19H02142; in part by           sive communication overhead [28]. What is worse, there have
+the Summit of the Six Top Talents Program of Jiangsu under Grant XYDXX-
+010; and in part by the Project of the Key Laboratory of Universal Wireless      been many attacks that can restore the raw data of client from
+Communications (BUPT) of Ministry of Education of China under Grant              the uploaded model parameters, which means that this scheme
+KFKT-2020106. (Corresponding authors: Yijun Wang; Guan Gui.)                     still poses the security risk of information leakage [29].
+   Ruijie Zhao, Yijun Wang, and Zhi Xue are with the School
+of Electronic Information and Electrical Engineering, Shanghai Jiao                 Recently, the federated distillation (FD) scheme is proposed
+tong University, Shanghai 200240, China (e-mail: ruijiezhao@sjtu.edu.cn;         to reduce the communication overhead and security risk caused
+ericwyj@sjtu.edu.cn; zxue@sjtu.edu.cn).
+   Tomoaki Ohtsuki is with the Department of Information and Computer
+                                                                                 by exchanging model parameters [30]–[32]. Clients in FD can
+Science, Keio University, Yokohama 108-8345, Japan (e-mail: ohtsuki@             upload outputs of DL model rather than model parameters
+keio.jp).                                                                        to the server. Then, the server aggregates outputs, also called
+   Bamidele Adebisi is with the Department of Engineering, Faculty of
+Science and Engineering, Manchester Metropolitan University, Manchester
+                                                                                 local logits. The aggregated local logits, i.e., global logits are
+M1 5GD, U.K. (e-mail: b.adebisi@mmu.ac.uk).                                      downloaded and used by clients in further local training pro-
+   Guan Gui is with the College of Telecommunications and Information            cess. Although FD reduces the communication overhead and
+Engineering, Nanjing University of Posts and Telecommunications, Nanjing
+210003, China (e-mail: guiguan@njupt.edu.cn).                                    achieves similar accuracy to that of FL based on independent
+   Digital Object Identifier 10.1109/JIOT.2022.3175918                           and identically distributed (IID) data, the performance of FD
+                                 2022 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+                      2327-4662 c
+                                    See https://www.ieee.org/publications/rights/index.html for more information.
+     Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+8646                                                                                       IEEE INTERNET OF THINGS JOURNAL, VOL. 10, NO. 10, 15 MAY 2023
+
+
+
+is poor when the distribution of data is not IID (non-IID).                              packets are familiar or not, which improves the quality
+As data distribution is non-IID, the local data of device does                           of each client’s predicted labels. In addition, the combi-
+not represent the population distribution and the global logits                          nation of the hard-label strategy and voting mechanism
+retain similar information to the local labels already attached                          further reduces communication overhead.
+to each device. Training based on global logits can be almost                         4) We construct three challenging non-IID scenarios and
+identical to training based on a local data set. Hence, several                          evaluate SSFL on the real-world IoT traffic data set. The
+practical applications of FL-based intrusion detection method                            experimental results show that our scheme can achieve
+should achieve these aims.                                                               better detection performance as well as lower commu-
+   1) Security: FL is proposed to protect users’ data privacy.                           nication overhead than state-of-the-art methods. Thus, it
+        Hence, the FL-based schemes should ensure private data                           is suitable for federated training and detecting intrusions
+        cannot be obtained or restored.                                                  in the IoT network.
+   2) Accuracy: Clients often have non-IID private data in                            The remainder of this article is organized as follows.
+        real-world IoT network, so FL training needs to avoid                      Section II reviews the state-of-art methods used in IDS. In
+        the adverse effects of non-IID data.                                       Section III, we introduce the baseline schemes for feder-
+   3) Efficiency: Successful deployment of the scheme in                           ated training, including the FL scheme, the FD scheme, and
+        a real-life environment requires the FL method with                        the distillation-based semisupervised FL (DS-FL) scheme.
+        low communication overhead. This is to ensure timely                       The details of our method are described in Section IV. In
+        delivery of the final model.                                               Section V, we experimentally evaluate the performances of
+   To address these challenges mentioned above, we develop                         SSFL. Finally, we conclude this article in Section VI.
+a semisupervised FL scheme via knowledge distillation for
+intrusion detection, denoted as semisupervised FL method                                                     II. R ELATED W ORKS
+(SSFL), which consists of multiple clients and a central server.                   A. DL-Based IDS
+Specifically, the client first downloads the unlabeled open data
+                                                                                      Researchers have proposed many intrusion detection meth-
+from the central server, and this step is performed only once
+                                                                                   ods to defend against cyber attacks. In general, IDSs are
+for each client. The easy-to-obtain unlabeled traffic data does
+                                                                                   divided into three categories: 1) rule-based IDS; 2) ML-based
+not require manual labeling, which saves labor and time costs.
+                                                                                   IDS; and 3) DL-based IDS. The rule-based IDS determines
+Then, the local non-IID labeled data are used to train the first-
+                                                                                   whether the traffic matches the corresponding rule, which is
+stage classifier network. Since the first-stage classifier cannot
+                                                                                   based on the collected abnormal samples. The main draw-
+learn some traffic categories that are not in the local labeled
+                                                                                   backs of rule-based IDS are that some key features (e.g.,
+data set, it may make incorrect predictions for unfamiliar
+                                                                                   port number) prone to failure in a complex network envi-
+unlabeled traffic data. Thus, we introduce a discriminator to
+                                                                                   ronment, and it is difficult to detect unknown intrusions. In
+discriminate whether the unlabeled traffic packets are “famil-
+                                                                                   recent years, to better analyze the complex network traffic,
+iar,” in which the unfamiliar traffic packets will be marked, so
+                                                                                   some ML algorithms have been applied in the field of intrusion
+as to improve the quality of the predicted soft labels. Note that
+                                                                                   detection [33]–[37]. Although the ML-based IDSs can detect
+both the classifier network and the discriminator network use
+                                                                                   unknown intrusions based on the payload or statistical features
+the model based on convolutional neural networks (CNNs),
+                                                                                   of the traffic effectively, they usually rely heavily on feature
+which can effectively extract the deep features of the traffic
+                                                                                   engineering and can only extract shallow features. Some works
+packet. Next, in order to further reduce communication cost,
+                                                                                   have proposed methods based on DL algorithms for intrusion
+the client converts soft labels into hard labels and uploads
+                                                                                   detection and demonstrated better performance than ML algo-
+them to the central server. After the central server has col-
+                                                                                   rithms. For instance, Mirsky et al. [7] designed an ensemble
+lected the predictions of all clients, the global labels of the
+                                                                                   of neural networks to collectively differentiate between nor-
+unlabeled open data are determined through a voting mecha-
+                                                                                   mal and abnormal traffic, which can realize low-complexity
+nism, rather than directly aggregating. Finally, the aggregated
+                                                                                   online processing. Lin et al. [13] proposed a time-related intru-
+labels are sent to each client for training the second-stage clas-
+                                                                                   sion detection method based on the stacked sparse autoencoder
+sifier. The above steps are repeated to achieve an excellent
+                                                                                   (SSAE) and recurrent neural network (RNN), which effec-
+performance model for intrusion detection via SSFL. Hence,
+                                                                                   tively extracts features with the greedy layerwise strategy for
+the main contributions of this article can be summarized as
+                                                                                   better detection performance. Andresini et al. [14] proposed
+follows.
+                                                                                   to use a CNN architecture that is trained on the imagery rep-
+   1) We propose an SSFL for intrusion detection, which uses
+                                                                                   resentation of the network flows to detect the attacking flow
+        unlabeled data and knowledge distillation to achieve
+                                                                                   behavior. Obviously, DL-based methods have achieved success
+        a privacy-preserving and communication-efficient FL-
+                                                                                   in the field of intrusion detection, but they rely on a large num-
+        based intrusion detection method for IoT.
+                                                                                   ber of traffic samples to train a model with excellent detection
+   2) A CNN-based model is developed for extracting the
+                                                                                   performance. Since these data have user’s private information,
+        deep features of the traffic packet, and take this model
+                                                                                   most users are unwilling to provide it. On the other hand, some
+        as both the classifier network and the discriminator
+                                                                                   laws (e.g., GDPR)1 on data privacy have strict regulations on
+        network.
+                                                                                   the use of user data.
+   3) To make our scheme more effective, we design a dis-
+        criminator to make a distinction as to whether the traffic                    1 https://gdpr.eu/data-privacy
+
+
+       Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+ZHAO et al.: SEMISUPERVISED FEDERATED-LEARNING-BASED INTRUSION DETECTION METHOD                                                                             8647
+
+
+
+B. FL-Based IDS                                                                      More specifically, we consider there are K clients partic-
+   FL is proposed for privacy-sensitive data, which is in con-                  ipating FL and each client k = 1, 2, 3, . . . , K has a private
+trast to CDL that requires to collect private data of the                       labeled data set Dk = {(xki , yki )|i = 1, 2, . . . , n}, where xki ,
+user. Recently, due to privacy advantages, the FL method                        yki , and n, respectively, represent the vectorized feature of a
+has been widely used in IDS and IoT. Kang et al. [16] first                     sample, the one-hot label of the sample, and the number of
+introduced reputation as the metric to measure the reliabil-                    samples in the data set Dk . For an L-class classification task,
+ity and trustworthiness of the mobile devices for reliable FL.                  yki is a one-hot vector, i.e., yki = [yki,0 , yki,1 , . . . , yki,L−1 ]T . For
+Popoola et al. [17] proposed an FL method for detecting the                     simplicity, we, respectively, concatenate {xki |i = 1, 2, . . . , n}
+zero-day botnet attack to avoid data privacy leakage in IoT                     and {yki |i = 1, 2, . . . , n} as matrices named Xk and Y k .
+edge devices. Al-Marri et al. [18] proposed to use mimic                             Before the training of the first communication round, the DL
+learning in FL framework to overcome the problem of reverse                     model of client k is initialized with the DL model of the server,
+engineering in FL to minimize the risk of jeopardizing users’                   i.e., wk ← ws , where ws and wk , respectively, represent the
+privacy in IDS. Hei et al. [19] proposed the FL framework                       initial parameters of the DL model of the server and initialized
+for IDS and this framework stored the model training process                    parameters of the DL model of client k.
+information and behavior on the blockchain to meet the storage                       In the training step of first communication round, client k
+needs of a large number of alert training data in real scenarios.               trains its DL model with its private data set. Then, each client
+Zhang et al. [20] proposed a novel semisupervised FL method                     k = 1, 2, 3, . . . , K uploads the model parameters wk to the
+that leverages unlabeled data to train an unsupervised model                    server. The server aggregates the parameters and generates new
+based on consistency regularization, and then they aggregate                    parameters ws as follows:
+the unsupervised model, supervised model, and global model                                                           
+                                                                                                                     K
+                                                                                                                       Nk
+into a new global model.                                                                                     ws =              wk                           (1)
+   However, the DL-based model has a huge amount of                                                                        N
+                                                                                                                     k=1
+parameters, which makes the client suffer from the commu-
+nication bottleneck. To reduce the communication overhead                       K Nk is the total number of private samples i.e., N =
+                                                                                where
+                                                                                   k=1 N . In the second communication round, new param-
+in FL-based schemes, some researchers have applied various                      eters of DL model of server are broadcast to each client,
+methods. Liu et al. [28] proposed an efficient communication                    i.e., wk ← ws and the above processes will loop for several
+FL scheme, which uses the gradient compression mechanism                        communication rounds.
+based on top-k selection in FL-based IDS to reduce the com-
+munication overhead. Qin et al. [38] used binarized neural                      B. Baseline 2: FD Scheme
+networks in FL-based IDS to keep the communication over-
+                                                                                   Clients participating in the FD scheme do not need to upload
+heads of training small. Although the above methods reduce
+                                                                                parameters, instead, all clients need to upload the averaged
+the communication overhead, it will scale up according to
+                                                                                predictions of each label, which reduces communication over-
+the model size. Inspired by some works of the distillation-
+                                                                                head throughout the training process [30]. The private data set
+based FL method [30], [31], we develop a semisupervised FL
+                                                                                Dk owned by client k can be divided into L subsets accord-
+scheme for intrusion detection, which transmits the predictions
+                                                                                ing to the labels, i.e., Dk = Dk,0 ∪ Dk,1 ∪ · · · ∪ Dk,L−1 . For
+of unlabeled data instead of model parameters in each round of
+                                                                                a subset Dk,l = {(xk,l                k,l
+                                                                                                               i , yi )|i = 1, 2, 3, . . . , n}, each sam-
+training. Moreover, we propose a discriminator for improving
+                                                                                ple’s label is a one-hot vector represent the label is l, i.e.,
+the quality of each client’s predicted labels. The results show
+                                                                                yk,l
+                                                                                 i   = [yk,l      k,l             k,l            k,l           k,l
+                                                                                           i,0 , yi,1 , . . . , yi,l , . . . , yi,L−1 ] where yi,l = 1 and
+                                                                                                                                       T
+that our method outperforms state of the art on the real-world
+                                                                                others are 0. There are six steps in the FD method.
+traffic data set, as detailed in the later experiment section.
+                                                                                   First, each client k trains its local model wk with the data
+                                                                                set Dk , which is same as FL. Then each client computes the
+                       III. P RELIMINARIES                                      average value of each label also called a local-average logit
+                                                                                vector. The detail is as follows:
+   In this section, we summarize the baseline schemes for fed-                                                                        
+erated training, including the FL scheme, the FD scheme, and                                                  ŷk,l
+                                                                                                                i    =   F    x k,l k
+                                                                                                                                i   |w                  (2)
+the DS-FL scheme, detailed as follows.
+                                                                                                                           N k,l
+                                                                                                                      1  k,l
+                                                                                                           ȳk,l =         ŷi .                            (3)
+                                                                                                                     N k,l
+A. Baseline 1: FL Scheme                                                                                                   i=1
+   The process of the FL scheme consists of four steps. First,                  Note that client k may not have the samples of which label
+IoT devices or mobile phones participating FL, called clients                   is l, i.e., Dk,l = ∅. In such situation, the local-average logit
+as per terminology, train their DL model with private data                      vector of label l is 0, i.e., ȳk,l = 0.
+sets. Second, each client uploads the parameters of model to                        After that, each client uploads the local-average logit vectors
+a central server. The server adds up the parameters from each                   {ȳk,0 , ȳk,1 , . . . , ȳk,L−1 } to the server. Then, the global-average
+client and calculates the average value of the parameters to                    logit vectors are broadcast to each client. Each client computes
+obtain new parameters. Finally, the new parameters are broad-                   new local-average logit vectors based on them as follows:
+cast to each client and then each client continues the loop until                                                   1  l                  
+training converges.                                                                                    ȳk,l ← l          N × ȳs,l − ȳk,l .           (4)
+                                                                                                                 N −1
+
+    Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+8648                                                                                       IEEE INTERNET OF THINGS JOURNAL, VOL. 10, NO. 10, 15 MAY 2023
+
+
+
+
+Fig. 1. Overview of proposed semisupervised FL scheme for intrusion detection. Our CNN-based classifier is trained on the labeled local data with supervised
+training and on unlabeled open data with distillation training. Furthermore, we introduce multiple mechanisms to jointly improve the quality of global labels.
+
+
+
+Note that the local-average logit vector ȳk,l
+                                            i of each sample xi
+                                                                 k                 When T is less than 1, the distribution of pj will be sharper,
+                                            k,l
+whose ground truth label is l is equal to ȳ . In the next, client                 which means that the information entropy is reduced. The
+k trains its model with the new local-average logit vectors                        motivation for reducing the entropy of global logits is to
+and the ground-truth label. Although FD greatly reduces the                        accelerate and stabilize DS-FL, particularly in non-IID data
+communication overhead, the performance of FD is poor when                         distributions [31].
+                                                                                                  s
+the distribution is non-IID.                                                          Here, P̂ , the matrix denoting the concatenated {p̂sj |i =
+                                                                                   1, 2, . . . , N o }, is then broadcast to each client. Finally, each
+C. Baseline 3: DS-FL Scheme                                                        client trains its DL model with the global logits. More
+   The DS-FL scheme [31] consists six steps and each client                        specifically, the process, called distillation, is as follows:
+not only holds a labeled private data set Dk but also an unla-                                                              k s
+                                                                                                          wk ← wk − γ ∇ψ P̂ , P̂ .                   (9)
+beled data set Do = {xoj |j = 1, 2, . . . , N o }, where xoj and N o ,
+respectively, represent the vectorized feature of a sample and                        In addition, the server has a global model ws and the server
+the number of samples in the open data set. For simplicity, we                     trains the global model with the shared unlabeled data set and
+use a matrix Xo to denote the concatenated vectorized samples                      the global logits, i.e.,
+of Do .                                                                                                                        s
+                                                                                                                                   
+   In the first step of the first communication round, each client                               ws ← ws − γ ∇ψ F Xo |ws , P̂ .               (10)
+trains its DL model with private labeled data set, which is same
+                                                                                      The above procedures are looped for a number of com-
+as FL, as shown in (1). The next step is called “Prediction”
+                                                                                   munication rounds. Each client in the DS-FL method needs to
+step: each client k makes predictions, i.e., local logits for the
+                                                                                   train its local model with private data set; however, the trained
+unlabeled samples as follows:
+                                                                                 model makes predictions on open data set. If the distribution
+                          p̂kj = F xoj |wk                       (5)               of private data set is non-IID, the distribution of samples in
+                               k
+                                                                                   open data set can be extremely different from that of the pri-
+and we use the matrix P̂ to represent the concatenated {p̂kj |j =                  vate data set so this can result in wrong predictions on the
+1, 2, . . . , N o } of the DL model. Then, each client uploads the                 part of the trained model and subsequently lower the quantity
+local logits to the central server. Then, the server aggregates                    of local logits.
+the local logits and reduces the entropy of global logits p̂sj as
+follows:                                                                                              IV. P ROPOSED SSFL S CHEME
+                                    1 k
+                                         K
+                                s                                                    In this section, we first introduce the CNN-based detection
+                             p̂j =           p̂j               (6)
+                                    K                                              model. Then, the proposed SSFL method is described in detail.
+                                       k=1
+                                                                                 The overview of our approach is shown in Fig. 1.
+                             p̂sj ← S p̂sj |T                  (7)
+where S(·|T) is the softmax function with the T temperature,                       A. CNN-Based Baseline Model
+i.e.,                                                                                 The CNN model has a strong feature extraction ability and
+                                   p̂s                                           it can promote the information interaction between adjacent
+                             exp Tj
+               S p̂sj |T =             s .             (8)                       time windows and features, so we apply CNN in our model
+                           L−1          p̂j,l                                     for extracting the deep features of the traffic packet. The details
+                             l=0 exp T                                             of the CNN-based baseline model are shown in Table I.
+
+       Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+ZHAO et al.: SEMISUPERVISED FEDERATED-LEARNING-BASED INTRUSION DETECTION METHOD                                                                             8649
+
+
+                            TABLE I
+             D ETAILS OF CNN-BASED BASELINE M ODEL                              it is difficult for the client model (i.e., trained with non-IID
+                                                                                data) to generate high-quality logits on the unlabeled open data
+                                                                                set, we introduce multiple mechanisms to jointly improve the
+                                                                                quality of logits.
+                                                                                   We consider there are K clients and each client k ∈
+                                                                                {1, 2, . . . , K} has two data sets: 1) a private labeled data set
+                                                                                Dk,c = {(xk,c       k,c
+                                                                                               i , yi )|i = 1, 2, . . . , n} and 2) an unlabeled open
+                                                                                data set D = {xoj |j = 1, 2, . . . , N o } shared all over the clients.
+                                                                                              o
+
+                                                                                For the L-class classification task, yk,c      i  is a one-hot vector.
+                                                                                In addition, each client has a classifier model wk,c , which is
+                                                                                trained with the private data set. Moreover, each client has a
+                                                                                discriminator wk,d . We describe the details as follows.
+                                                                                   1) Train the Classifier: First, each client k trains its clas-
+                                                                                sifier wk,c with the labeled private data set. This detail is
+                                                                                expressed as
+                                                                                                                            k,c      
+                                                                                                  wk,c ← wk,c − γ ∇ψ Ŷ , Y k,c                   (11)
+
+                                                                                where ψ(·, ·) denotes the loss function, which is minimized
+                                                                                                k,c
+                                                                                in this step, Ŷ represents the output of the classifier model
+                                                                                                    k,c
+                                                                                function F, i.e., Ŷ = F(Xk,c |wk,c ), and γ denotes the learn-
+                                                                                ing rate. For multiclassification tasks, the loss function can be
+                                                                                a cross-entropy function. Then, each sample in Do is passed
+                                                                                through the classifier, which makes prediction on it and the
+                                                                                confidence score of the sample is computed as
+                                                                                                                              
+   Except for the output layer, the structure of the classifier                             ck,o
+                                                                                              j   = max  p̂ k
+                                                                                                            j = max   F   x   |w
+                                                                                                                            o k,c
+                                                                                                                            j        .       (12)
+network and the discriminator network is the same. Each
+model has eight convolutional layers to extract the feature                       2) Train the Discriminator: We first create an empty set
+maps of the traffic packet features effectively and two fully                   Dk,d = ∅. Then, a sample xoj will be added in this set if the
+connected layers to output the prediction results of the model.                 confidence score is less than a boundary number θ and the
+The input channels of the first convolutional layer are 23,                     sample will be discriminated as “unfamiliar” to client k. The
+which is equal to the number of rows of the input. Each layer                   process is described as
+of the first four convolutional layers of the model has 64 con-                                                      
+volution kernels and the kernel size is 3. Each layer of the last                          Dk,d = Dk,d ∪ xoj , [0, 1]T |ck,o
+                                                                                                                         j <θ             (13)
+four convolutional layers has 128 kernels and the kernel size is
+same as the first four layer. Finally, the output of the last con-              where we use one-hot label [0, 1]T to denote the unfamiliar
+volutional layer is flattened and a multilayer perceptron (MLP)                 label. What is more, we consider each sample in the private
+with three fully connected layers is used for classification.                   data set is “familiar” to the client k, so all the samples in pri-
+The final layer of the classifier network and the discriminator                 vate data set are added into Dk,d and the labels are “familiar.”
+network has 11 and 2 neurons, respectively.                                     The process is expressed as
+   Since our work focuses more on the design of an efficient                                                          
+federated training framework, we only briefly describe the                            Dk,d = Dk,d ∪ xk,c  i , [1, 0] T
+                                                                                                                        |i = 1, 2, . . . , N k,c (14)
+structure of our CNN-based model. Note that our federated
+training scheme does not aggregate model parameters, which                      where we use one-hot label [1, 0]T to denote the familiar label.
+means that it can work even if clients adopt different model                    Hence, Dk,d data set contains two categories data after this step
+structures.                                                                     has finished. Then, the discriminator wk,d is trained with the
+                                                                                Dk,d data set.
+B. Proposed SSFL Scheme                                                            3) Filter and Upload: The predictions of unlabeled open
+   FD leverages the knowledge of the clients by aggregating                     samples in step 2 are filtered by the trained discriminator. We
+the logit of each class; however, it can only enhance the train-                first compute the discriminating result djk,o as
+ing effect of the corresponding class in each client, which                                                                  
+means that efficient classification for all classes cannot be                                       djk,o = arg max F xoj |wk,d .                           (15)
+achieved when clients lack samples of some classes. Thus, we
+introduce an unlabeled open data set to solve this problem.                     The output of F(·|wk,d ) is a 2-D vector. We regard arg max(·)
+Our method can use global logit to identify what class each                     as the index of the max value of a vector. As discussed in
+sample in the unlabeled data set pertains. Furthermore, since                   the previous step, if djk,o = 0, xoj is familiar to client k or the
+
+    Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+8650                                                                                       IEEE INTERNET OF THINGS JOURNAL, VOL. 10, NO. 10, 15 MAY 2023
+
+
+
+sample is unfamiliar. For each sample xoj in Do , the prediction                     Algorithm 1: Pipeline of the Proposed Method on K
+p̂kj is filtered as follows:                                                         Clients for T Rounds
+                                                                                  for each client k in parallel do
+                   arg max   F xo |wk,c
+                                j         , if djk,o = 0                                  1.Train the classifier:
+           p̂kj =                                           (16)
+                   −1,                      if djk,o = 1                                  train its classifier wk,c via (11)
+                                                                                          for each xoj in Do do
+where we use “−1” to denote the sample is unfamiliar. Then,                                    compute ck,o   via (12)
+                                                                                                          j
+each client uploads the hard labels of unlabeled open data
+                                                                                          end
+(i.e., {p̂kj |j = 1, 2, . . . , N o }) to the central server. Note that the
+                                                                                          2.Train the discriminator:
+unlabeled open data is the same for each client; however, the
+                                                                                          create Dk,d via (13) and (14)
+“familiar” samples in the unlabeled open data discriminated
+                                                                                          train wk,d with Dk,d
+by the discriminator of each client are different.
+                                                                                          3.Filter and upload:
+   4) Vote and Broadcast: For a sample xoj , we consider that
+                                                                                          filter predictions via (16)
+there are L voting sets, i.e., {V j,0 , V j,1 , . . . , V j,L−1 }. Class −1               upload predictions to server
+is used to identify unfamiliar samples, so the class −1 is not                        end
+included in the L voting sets. For the predicted label p̂kj of                        4.Vote and broadcast (on the central server):
+the sample, if p̂kj = −1, this predicted label is added into the                     for j ← 1 to N o do
+corresponding voting set.                                                                 vote and compute p̂sj via (17)
+   After all clients input the predicted label of the sample                          end
+(excluding unfamiliar samples) into the corresponding voting                          broadcast the vote result to each client
+set, the central server determines the global hard label of this                      5.Distillation:
+sample according to the number of votes in each voting set.                           for each client k in parallel do
+The global hard label of the sample is calculated as follows:                             train classifier via (18)
+                                                          
+                                                                                end
+            p̂sj = arg max V j,0 , V j,1 , . . . , V j,L−1  .     (17)          The 5 steps are iterated for T rounds
+                                         s
+For simplicity, we use matrix P̂ to represent the concatenated
+                                                                     s
+{p̂sj |j = 1, 2, . . . , N o }. Finally, global hard labels (i.e., P̂ ) are
+broadcast to each client.                                                          camera) [39]. Among them, seven IoT devices have 11 cate-
+     5) Distillation: Each client treats itself as a student and                   gories of traffic: one benign traffic and ten attack traffic. The
+uploads the predicted labels of unlabeled open data to the                         other two devices have six categories of traffic: one benign
+central server, and then the aggregated global hard labels of                      traffic and five attack traffic. Each traffic packet has a total
+unlabeled open data from the central server act as the teacher,                    of 115 features extracted from most recent five different time
+where each local client model uses unlabeled open data with                        windows: 100 ms, 500 ms, 1.5 s, 10 s, and 1 min. These fea-
+global hard labels for distillation training. The process is as                    tures can be computed quickly to meet the requirements of
+follows:                                                                           real-time detection of malicious traffic packets. The N-BaIoT
+                                              k,c s 
+                     wk,c ← wk,c − γ ∇ψ P̂ , P̂                        (18)        data set has comprehensive traffic categories and a large num-
+                                                                                   ber of traffic records, so it is widely used in the field of
+            k,c                                                                    intrusion detection as a baseline data set.
+where P̂      = F(Xo |wk,c ). The classifier model of central
+                              s
+server is also trained with P̂ and it will be used for evaluation.
+   The overall training procedure of SSFL is illustrated in                        B. Data Preprocessing
+Algorithm 1.
+                                                                                      We preprocess the data in three steps, namely, data set
+                                                                                   partition, normalization, and two-dimensionalization.
+                     V. E XPERIMENTAL R ESULTS
+                                                                                      1) Data Partition: In the real world, there are usually a
+   In this section, we present and discuss our experimental                        large number of clients with non-IID data participating in
+results. In particular, the experiments will answer the three                      FL training. Thus, we divide the raw data set to meet this
+research questions.                                                                deployment situation.
+   1) RQ1: Can SSFL achieve higher detection accuracy than                            Using the raw data set for training and analysis requires
+       the state-of-the-art methods? (Section V-D).                                expensive resources and infrastructure, so we first devised
+   2) RQ2: Can SSFL achieve faster training process and                            a new data set mini-N-BaIoT consisting of 11 categories
+       lower communication overhead? (Section V-E).                                of traffic from nine IoT devices. Specifically, we consider
+   3) RQ3: How effective is each component of SSFL in                              the subdata sets of nine IoT devices in the raw data set as
+       improving performance? (Section V-F).                                       Dd1 , Dd2 , . . . , Dd9 . Ddi is divided into Ldi subsets according to
+                                                                                   the traffic category, which means that each subset Ddi ,l only
+A. Description of Data Set                                                         contains traffic data whose category is l. We select 1000 traffic
+  The N-BaIoT data set is a public data set, which has nine                        data records in each subset Ddi ,l as Dmini di ,l for the mini-N-BaIoT
+subdata sets collected from nine IoT devices (e.g., doorbell and                   data set.
+
+       Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+ZHAO et al.: SEMISUPERVISED FEDERATED-LEARNING-BASED INTRUSION DETECTION METHOD                                                                              8651
+
+
+
+
+Fig. 2. Schematic illustration of samples per class allocated to each client in different scenarios, where the x-axis indicates client IDs, the y-axis indicates
+class labels, and the size of scattered points indicates the number of labeled samples. (a) Scenario 1. (b) Scenario 2. (c) Scenario 3.
+
+   Then, our new data set is divided into private data set Dp ,                  follows:
+open data set Do , and test data set Dtest according to the                                         ⎡                                          ⎤
+                                                                                                    xi,0       xi,23   xi,46    xi,69   xi,92
+proportion of 70%, 10%, and 20%. Note that each set is dis-                                       ⎢ xi,1       xi,24   xi,47    xi,70   xi,93 ⎥
+joint with the other two sets, and Do does not contain the                                        ⎢                                            ⎥
+                                                                                             xi = ⎢
+                                                                                                  ⎢ xi,2       xi,25   xi,48    xi,71   xi,94 ⎥⎥.            (19)
+label.                                                                                            ⎣ ···         ···     ···      ···     ··· ⎦
+   Note that all data records of Dp are part of Ddi and Dp is                                       xi,22      xi,45   xi,68    xi,91   xi,114
+distributed to Kdi clients in the following three scenarios for
+experiments.
+   1) Scenario 1: Dp is sorted by its classification label and                   C. Experiment Setup
+       is divided into 2 × Kdi shards of size |Dp |/(2Kdi ) among                   To comprehensively evaluate the performance and verify the
+       which two shards are assigned to each client. In this                     scalability of the method, we conduct evaluations in three
+       scenario, Kdi is set to 3. This strategy follows the pioneer              different scenarios. The data distributions in the three sce-
+       study [31].                                                               narios are all non-IID, but the data splitting strategies are
+   2) Scenario 2: The distribution strategy in Scenario 2 is                     different (see Fig. 2). Scenario 2 and Scenario 3 both con-
+       similar to Scenario 1 but Kdi is equal to Ldi . So if                     tain 89 clients, which means that the traffic data of each
+       Ddi contains 11 categories traffic data, Kdi is 11. If Ddi                client in Scenario 2 and Scenario 3 are less than Scenario 1
+       contains six categories traffic data, Kdi is 6.                           (27 clients). In Scenario 3, the dirichlet data splitting strategy
+   3) Scenario 3: In this scenario, we use a dirichlet distribu-                 (α = 0.1) is used to distributing the private data set. To make
+       tion Dir(α), in which a smaller α indicates higher data                   the experimental evaluation clearer, we introduce the exper-
+       heterogeneity. We set α = 0.1 in experiments and Kdi is                   imental environment, implementation details, and evaluation
+       equal to Ldi .                                                            metrics as follows.
+   After the partition, the distributions of these data sets satisfy                1) Experimental Environment: All the evaluations are con-
+the following conditions.                                                        ducted in Python 3.7 with the PyTorch framework of ver-
+   1) The private data set of client k only comes from one                       sion 1.9.0 and running on the PC with Intel Core i9-
+       device and this is consistent with the real world.                        11900K@3.50 GHz, 64-GB RAM, and an NVIDIA GeForce
+   2) The amount of data and classes of data owned by dif-                       RTX3090 GPU.
+       ferent clients are quite different. The distribution is                      2) Implementation Details: In the training phase, we train
+       non-IID.                                                                  the model with an Adam optimizer. The learning rate, the batch
+   3) The intersection of Do , Dp , and Dtest with each other is                 size, and the local train epochs in each communication round
+       the empty set.                                                            is set to 0.0001, 100, and 5, respectively. The threshold θ for
+   Fig. 2 shows the examples of distribution results of three                    judging unfamiliar samples is not set to a fixed value for all
+scenarios, where the x-axis indicates client IDs, y-axis indi-                   clients. For a specific client, this value was set to the median
+cates labels, and the size of scattered points indicates the                     of the clients’ predicted probabilities.
+number of training samples.                                                         3) Evaluation Metrics: To measure the performance of our
+   2) Normalization: Since the traffic data have features of                     method, we calculate the number of true positive (Tp ), true
+different dimensions, the level of each dimension of the data                    negative (Tn ), false positive (Fp ), and false negative (Fn ).
+set varies greatly. To train our model more effectively, the                     Based on the above definition, recall, precision, and F1 can
+values of features are scaled to numbers between 0 and 1                         be obtained
+using min–max normalization.                                                                                     Tp
+   3) Dimensionalization: Each sample Xi has 115 features,                                         Recall =                                    (20)
+                                                                                                             Tp + Fn
+which can be divided into five parts according to the time
+                                                                                                                 Tp
+window. So we divide the vectorized feature of a sam-                                           Precision =                                    (21)
+ple into five parts and transfer the vector to a matrix,                                                     Tp + Fp
+which has five columns and 23 rows to input the sample                                                            Precision · Recall
+                                                                                                       F1 = 2 ·                      .         (22)
+to the CNN model proposed in the next. The detail is as                                                          Precision + Recall
+     Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+8652                                                                                       IEEE INTERNET OF THINGS JOURNAL, VOL. 10, NO. 10, 15 MAY 2023
+
+
+                                                                        TABLE II
+                                                      C OMPARISON OF M ETRICS W ITH OTHER M ETHODS
+
+
+
+
+D. Detection Performance of SSFL for Intrusion Detection                           FL scheme achieves good detection performance, but the prob-
+   In this experiment, we evaluate the detection performance                       lems of huge communication overhead cannot be ignored,
+of different methods by measuring Accuracy, F1 -Score, and                         which will be discussed later. The FL scheme also suffers
+Precision. Our SSFL is compared with the following five                            from the risk of gradient leakage, that is, the attacker can
+baseline methods.                                                                  recover the raw data through the model parameters uploaded
+   The detailed description of the three federated training                        by the client, which means that the FL scheme is not very
+schemes (i.e., FL, FD, and DS-FL) can be found in Section III.                     secure [29]. Our method uploads hard labels from each client
+FL is the most common scheme in federated learning, which                          instead of gradients or parameters, making attack methods
+directly aggregates model parameters uploaded by different                         that recover user data from uploaded gradients infeasible. Our
+clients. FD is proposed by Jeong et al. as a distillation-                         scheme achieves more effective federated training for the fol-
+based FL scheme that clients share per-class logits instead                        lowing reasons: 1) similar to the DS-FL, we also leverage
+of model parameters. DS-FL is proposed by Itahara et al. [31]                      open data to better suit the case of non-IID data distribution;
+that leverages the exchanged model outputs to label the                            2) the discriminator of each client can significantly improve
+unlabeled open data. Compared with DS-FL scheme, our                               the quality of predicted labels; and 3) the voting mechanism
+method has two key differences: 1) we take the discrimi-                           of the central server can effectively aggregate the training
+nator to improve the quality of uploaded labels and 2) our                         results from different clients. We can also find that the detec-
+hard-label strategy and voting mechanism can further reduce                        tion performance of both the LSTM model and the MLP
+the communication overhead. Moreover, MLP and LSTM are                             model is lower than our CNN model. Besides, the federated
+introduced to compare the detection performance with our                           training task of Scenario 3 is the most challenging, which
+CNN model, and both are trained using our scheme. To ensure                        also results in a lower accuracy of SSFL than the other two
+fair comparison, we perform on the same data set in dif-                           scenarios.
+ferent scenarios, and carefully follow the same evaluation                            To further evaluate the classification performance of SSFL,
+protocol.                                                                          we analyze the confusion matrices of SSFL in the three sce-
+   Table II illustrates the results. We can observe that SSFL                      narios on the test data set. As shown in Fig. 3, SSFL can
+outperforms other baselines with a considerable margin. In                         effectively classify different traffic categories, and the detec-
+the federated training manner, neither FD nor DS-FL can                            tion accuracy of benign traffic in all three scenarios reaches
+achieve high detection accuracy. Specifically, the detection                       more than 99%. G_TCP and G_UDP are two categories of
+accuracy of FD in Scenarios 1 and 3 is about 50%, and                              attack traffic that are easily confused. We conjecture this
+the accuracy rate in Scenario 2 is only 22.12%. There are                          is largely due to that they are both DoS attacks and have
+two reasons: 1) the distillation training of FD is difficult to                    very similar characteristics. It can be concluded that our
+implement when the data distribution is non-IID (i.e., the                         scheme with the excellent detection performance is suitable for
+local data of the client cannot represent the population dis-                      federated training and detecting intrusions in the IoT networks.
+tribution), so the highest accuracy is obtained by one client
+trained with its local traffic data and 2) in Scenario 2, each                     E. Communication Efficiency of the Proposed SSFL Method
+client has fewer categories of traffic, which leads to lower                          Tables III and IV answer RQ2 by showing the results of
+accuracy. Since the best detection performance of FD is                            our model against baselines. In overall, SSFL achieves faster
+obtained by a single client, it can be considered that the FD                      training process and lower communication overhead.
+method is ineffective in the case of non-IID data distribu-                           In terms of learning efficiency, we can observe from
+tion. The accuracy of DS-FL is higher than that of FD in                           Table III that SSFL has the fastest learning speed with excel-
+Scenario 1 and Scenario 2, indicating that the introduction of                     lent performance and outperforms other baselines. Specifically,
+unlabeled open data improves the usability of the distillation-                    SSFL achieves high accuracy in the first ten epochs, and
+based FL under non-IID data distribution. However, the more                        achieves convergence around 150 epochs. Our multiple mech-
+uneven data distribution in Scenario 3 makes DS-FL unable to                       anisms jointly obtain high-quality global labels for federated
+predict correctly on the open data, resulting in poor detection                    training, which are undoubtedly the key to achieve fast con-
+performance. As a traditional federated training scheme, the                       vergence and high performance. The Top-1 accuracy of the
+
+       Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+ZHAO et al.: SEMISUPERVISED FEDERATED-LEARNING-BASED INTRUSION DETECTION METHOD                                                                               8653
+
+
+
+
+Fig. 3.   Confusion matrices of SSFL on the test data set. (a) Scenario 1. (b) Scenario 2. (c) Scenario 3.
+
+                                                                   TABLE III
+                       C OMPARISON OF T OP -1 T EST ACCURACY W ITH OTHER M ETHODS AT D IFFERENT C OMMUNICATION ROUND
+
+
+
+
+                                                                    TABLE IV
+                                               C OMPARISON OF C OMMUNICATION OVERHEAD AND T OP -ACC
+
+
+
+
+FL scheme as 200 epochs is still far from the highest accu-                       FL method communicates model parameters in each round,
+racy, which reflects that the speed of federated training by                      the large model size leads to huge communication overhead.
+directly averaging parameters is slow. In addition, FD and                        The communication overhead of other three distillation-based
+DS-FL quickly reach the upper limit of detection performance                      methods depends only on the output dimensions of the models
+and cannot further improve performance through communica-                         and does not scale up according to the model size, so these
+tion. The convergence speed of MLP and LSTM models is                             schemes can achieve low communication costs. Furthermore,
+slower than that of CNN models. Since our method is not                           the client in our proposed method uploads the hard labels
+affected by the size of model parameters, subsequent exper-                       of local predictions, so the communication overhead is much
+iments on communication overhead are not implemented on                           lower than DS-FL in which a client needs to upload the vectors
+MLP and LSTM models.                                                              of local predictions. Unfortunately, both DS-FL and FD meth-
+   Table IV lists the communication overhead of each method.                      ods have not achieved satisfactory detection performance due
+Note that in FL and FD, there is no need to distribute the open                   to the lack of effective mechanisms to deal with non-IID
+data set to each client. From this table, we notice that our                      private traffic data. It can be concluded from Table IV that
+proposed method is communication efficient and the amount                         SSFL has the best overall performance because of its high
+of data uploaded by our method is very small. Since the                           classification accuracy and communication efficiency.
+
+      Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+8654                                                                                       IEEE INTERNET OF THINGS JOURNAL, VOL. 10, NO. 10, 15 MAY 2023
+
+
+
+
+Fig. 4. Test accuracy curves of our SSFL, ours w/o voting, ours w/o discriminating, ours w/o discriminating and voting, and simply filtering. (a) Scenario 1.
+(b) Scenario 2. (c) Scenario 3.
+
+
+
+
+Fig. 5.   Impact of confidence threshold θc . (a) Scenario 1. (b) Scenario 2. (c) Scenario 3.
+
+
+
+F. Ablation Study                                                                  the voting mechanism makes the model performance worse
+   To further examine the level of benefit that each component                     when the client makes too many incorrect predictions. In other
+of SSFL brings to the performance, we conduct a three-stage                        words, the voting mechanism is a voting majority, so it needs
+ablation study on SSFL. In the first stage, we ablate different                    to be used in conjunction with a discriminator that improves
+key components and analyze the detection accuracy. In the                          the quality of client predicted labels. Moreover, the filtering
+second stage, we further evaluate the impact of different con-                     method, on its own, cannot effectively deal with the prob-
+fidence thresholds. In the third stage, we analyze the impact                      lems caused by non-IID private data. In Scenario 3, the
+of different labeling strategies on detection performance and                      extremely uneven data distribution makes the simply filtering
+communication overhead.                                                            completely ineffective. Thus, it could be concluded that both
+                                                                                   discriminating and voting contribute to SSFL to a considerable
+   As shown in Fig. 4, we first ablate discriminating, voting,
+                                                                                   extent.
+and both discriminating and voting from our method. Note
+                                                                                      θc is a key hyperparameter of our method. As shown in (12)
+that the discriminating corresponds to the third to fifth steps
+                                                                                   and (14), if ck,oj   < θc , the sample xoj will be regraded
+of our method (see the description in Section IV). Without
+                                                                                   as “unfamiliar” to client k and will be used to train the
+the discriminating, client k makes predictions on all unlabeled
+                                                                                   discriminator. So the values of θc can have a certain influ-
+samples, including familiar and unfamiliar ones. Besides, we
+                                                                                   ence on the performance of our method. In this section,
+evaluate the detection performance of using simply filtering
+                                                                                   we set the value of to 0.9, 0.8, 0.7, and the median value.
+instead of the discriminator. In simply filtering, whether an
+                                                                                   More specifically, we consider the set of confidence scores
+open sample xoj is familiar or not only depends on whether its
+                                                                                   is Ck = {ck,oj | j = 1, 2, . . . , N } and the median mentioned
+                                                                                                                       o
+confidence score ck,o
+                    j   is less than the threshold θs (i.e., also                  above is the median of this set. As shown in Fig. 5, when
+without the discriminator), and the threshold θs for each client                   we set a fixed value of θc for all clients participating in our
+is equal to the median confidence score of its predicted labels.                   method, the performance is worse than that the value of θc is
+If ck,o
+    j   < θs , the prediction p̂kj of xoj will be set −1. It can                   median value of Ck . Furthermore, comparing the results of the
+be seen that the removal of discriminating in all three scenar-                    three scenarios, we can observe that using the median value
+ios leads to significant performance drops, which illustrates                      as the confidence threshold has a greater performance advan-
+the necessity of discriminator for improving the quality of                        tage if the client has less local labeled data with fewer traffic
+each client’s predicted labels. Obviously, the use of the dis-                     categories.
+criminator has the largest impact on detection performance.                           We also investigate the impact of labeling strategies on
+The ablation research on the voting mechanism shows that                           detection performance and communication overhead. Our
+
+       Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+ZHAO et al.: SEMISUPERVISED FEDERATED-LEARNING-BASED INTRUSION DETECTION METHOD                                                                              8655
+
+
+
+
+Fig. 6. Test accuracy curve and communication overhead curve of different label strategies. “Soft Label w. xf” means that a client uploads soft labels to the
+server and each float number in the soft labels is rounded down to “x” decimal places. (a) Scenario 1. (b) Scenario 2. (c) Scenario 3.
+
+
+motivation for adopting the hard-label strategy is not to                        first distillation-based FL method in the field of traffic classi-
+improve the detection performance, but to reduce the commu-                      fication. Our key idea is to leverage the unlabeled open data
+nication overhead generated during federated training. The soft                  for enhancing the classifier performance. Then, we build a
+label of a sample is a probability vector in which each number                   CNN-based model for extracting deep features of the traffic
+is a float number of double type. Before a client uploads this                   packets, and take this model as both the classifier network and
+vector, each double number in this vector can be rounded down                    discriminator network. The discriminator is used to improve
+to a certain decimal places in order to reduce the memory                        the quality of each client’s predicted labels, which avoids the
+size of soft labels. As shown in Fig. 6, rounding down to                        failure of distillation training caused by a large number of
+8, 6, 4, or 2 decimal places can achieve almost same accu-                       incorrect predictions under private non-IID data. Additionally,
+racy but the communication overhead is quite different. The                      we further reduce communication overhead with hard-label
+results show that the fewer decimal places kept, the lower the                   strategy and voting mechanism. To simulate the real deploy-
+communication overhead. Therefore, uploading hard labels can                     ment environment in the IoT network (i.e., with a large number
+greatly reduce the communication overhead at the same time                       of devices and uneven traffic data distribution), we set up
+achieving high detection performance.                                            three challenging scenarios to evaluate our method. The exper-
+                                                                                 imental results show that SSFL can achieve better detection
+                                                                                 performance as well as lower communication overhead than
+                          VI. C ONCLUSION                                        other schemes. Our method meets the security, accuracy, and
+   In this article, we proposed a semisupervised FL scheme                       efficiency required for federated training and detecting intru-
+via knowledge distillation for intrusion detection, which is the                 sions in the IoT network. In future work, we will set a strategy
+
+     Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+8656                                                                                       IEEE INTERNET OF THINGS JOURNAL, VOL. 10, NO. 10, 15 MAY 2023
+
+
+
+to score the client’s contribution, which can better solve the                     [22] Y. Liu et al., “Boosting privately: Federated extreme gradient boost-
+situation where malicious clients affect federated training.                            ing for mobile crowdsensing,” in Proc. IEEE 40th Int. Conf. Distrib.
+                                                                                        Comput. Syst. (ICDCS), Singapore, Nov./Dec. 2020, pp. 1–11.
+                                                                                   [23] Y. Wang, G. Gui, H. Gacanin, T. Ohtsuki, O. A. Dobre, and H. V. Poor,
+                                                                                        “An efficient specific emitter identification method based on complex-
+                               R EFERENCES                                              valued neural networks and network compression,” IEEE J. Sel. Areas
+                                                                                        Commun., vol. 39, no. 8, pp. 2305–2317, Aug. 2021.
+ [1] H. Yao, P. Gao, P. Zhang, J. Wang, C. Jiang, and L. Lu, “Hybrid intrusion     [24] N. Zhang and M. Tao, “Gradient statistics aware power control for
+     detection system for edge-based IIoT relying on machine-learning-aided             over-the-air federated learning,” IEEE Trans. Wireless Commun., vol. 20,
+     detection,” IEEE Netw., vol. 33, no. 5, pp. 75–81, Sep./Oct. 2019.                 no. 8, pp. 5115–5128, Aug. 2021.
+ [2] S. Rajendran, Z. Sun, F. Lin, and K. Ren, “Injecting reliable radio           [25] B. McMahan, E. Moore, D. Ramage, S. Hampson, and B. A. Y. Arcas,
+     frequency fingerprints using metasurface for the Internet of Things,”              “Communication-efficient learning of deep networks from decentralized
+     IEEE Trans. Inf. Forensics Security, vol. 16, pp. 1896–1911, Dec. 2020,            data,” in Proc. AISTATS, Cadiz, Spain, May 2016, pp. 1273–1282.
+     doi: 10.1109/TIFS.2020.3045318.                                               [26] F. Ang, L. Chen, N. Zhao, Y. Chen, W. Wang, and F. R. Yu, “Robust
+ [3] S. I. Popoola, B. Adebisi, M. Hammoudeh, G. Gui, and H. Gacanin,                   federated learning with noisy communication,” IEEE Trans. Commun.,
+     “Hybrid deep learning for botnet attack detection in the Internet of               vol. 68, no. 6, pp. 3452–3464, Jun. 2020.
+     Things networks,” IEEE Internet Things J., vol. 8, no. 6, pp. 4944–4956,      [27] X. Fu et al., “Lightweight automatic modulation classification based
+     Mar. 2021, doi: 10.1109/JIOT.2020.3034156.                                         on decentralized learning,” IEEE Trans. Cogn. Commun. Netw., vol. 8,
+ [4] S. Bu, F. R. Yu, X. P. Liu, and H. Tang, “Structural results for combined          no. 1, pp. 57–70, Mar. 2022, doi: 10.1109/TCCN.2021.3089178.
+     continuous user authentication and intrusion detection in high secu-          [28] Y. Liu et al., “Deep anomaly detection for time-series data in Industrial
+     rity mobile ad-hoc networks,” IEEE Trans. Commun., vol. 10, no. 9,                 IoT: A communication-efficient on-device federated learning approach,”
+     pp. 3064–3073, Sep. 2011.                                                          IEEE Internet Things J., vol. 8, no. 8, pp. 6348–6358, Apr. 2021.
+ [5] G. Bovenzi, G. Aceto, D. Ciuonzo, V. Persico, and A. Pescape, “A              [29] L. Zhu and S. Han, “Deep leakage from gradients,” in Proc. Feder.
+     hierarchical hybrid intrusion detection approach in IoT scenarios,” in             Learn., 2020, pp. 17–31.
+     Proc. GLOBECOM, Taipei, Taiwan, Dec. 2020, pp. 1–7.                           [30] E Jeong, S. Oh, H. Kim, J. Park, M. Bennis, and S. Kim,
+ [6] R. Zhao et al.., “A novel intrusion detection method based on lightweight          “Communication-efficient on-device machine learning: Federated dis-
+     neural network for Internet of Things,” IEEE Internet Things J., early             tillation and augmentation under non-IID private data,” in Proc. NIPS,
+     access, Oct. 11, 2020, doi: 10.1109/JIOT.2021.3119055.                             Dec. 2018, pp. 1–6.
+ [7] Y. Mirsky, T. Doitshman, Y. Elovici, and A. Shabtai, “Kitsune: An             [31] S. Itahara, T. Nishio, Y. Koda, M. Morikura, and K. Yamamoto,
+     ensemble of autoencoders for online network intrusion detection,” in               “Distillation-based     semi-supervised      federated    learning    for
+     Proc. NDSS, San Diego, CA, USA, Feb. 2018, pp. 1–15.                               communication-efficient collaborative training with non-IID pri-
+ [8] L. Yang, A. Moubayed, and A. Shami, “MTH-IDS: A multi-tiered                       vate data,” IEEE Trans. Mobile Comput., early access, Mar. 31, 2021,
+     hybrid intrusion detection system for Internet of Vehicles,” IEEE Internet         doi: 10.1109/TMC.2021.3070013.
+     Things J., vol. 9, no. 1, pp. 616–632, Jan. 2022.                             [32] D. Sui, Y. Chen, J. Zhao, Y. Jia, Y. Xie, and W. Sun, “FedED: Federated
+ [9] T. Ye, G. Li, I. Ahmad, C. Zhang, X. Lin, and J. Li, “FLAG: Few-shot               learning via ensemble distillation for medical relation extraction,” in
+     latent Dirichlet generative learning for semantic-aware traffic detection,”        Proc. EMNLP, Nov. 2020, pp. 2118–2128.
+     IEEE Trans. Netw. Service Manag., vol. 19, no. 1, pp. 73–88, Mar. 2022.       [33] Z. Ma and A. Kaban, “K-nearest-neighbours with a novel similarity mea-
+[10] C. Fu, Q. Li, M. Shen, and K. Xu, “Realtime robust malicious traf-                 sure for intrusion detection,” in Proc. UKCI, Guildford, U.K., Sep. 2013,
+     fic detection via frequency domain analysis,” in Proc. CCS, Virtual,               pp. 266–271.
+     South Korea, Nov. 2021, pp. 3431–3446.                                        [34] R. Kumari, Sheetanshu, M. K. Singh, R. Jha, and N. K. Singh,
+[11] L. Yang, A. Moubayed, I. Hamieh, and A. Shami, “Tree-based intel-                  “Anomaly detection in network traffic using K-mean clustering,”
+     ligent intrusion detection system in Internet of Vehicles,” in Proc.               in Proc. RAIT, Dhanbad, India, Mar. 2016, pp. 387–393, doi:
+     GLOBECOM, Dec. 2019, pp. 1–6.                                                      10.1109/RAIT.2016.7507933.
+[12] G. Gui, M. Liu, F. Tang, N. Kato, and F. Adachi, “6G: Opening new             [35] M. Usha and P. Kavitha, “Anomaly based intrusion detection for 802.11
+     horizons for integration of comfort, security and intelligence,” IEEE              networks with optimal features using SVM classifier,” Wireless Netw.,
+     Wireless Commun. Mag., vol. 27, no. 5, pp. 126–132, Oct. 2020.                     vol. 23, no. 8, pp. 2431–2446, 2017.
+                                                                                   [36] Y. Shen, K. Zheng, C. Wu, M. Zhang, X. Niu, and Y. Yang, “An
+[13] Y. Lin, J. Wang, Y. Tu, L. Chen, and Z. Dou, “Time-related
+                                                                                        ensemble method based on selection using BAT algorithm for intrusion
+     network intrusion detection model: A deep learning method,” in Proc.
+                                                                                        detection,” Comput. J., vol. 61, no. 4, pp. 526–538, 2018.
+     GLOBECOM, Dec. 2019, pp. 1–6.
+                                                                                   [37] H. Wang, J. Gu, and S. Wang, “An effective intrusion detection frame-
+[14] G. Andresini, A. Appice, and D. Malerba, “Nearest cluster-based intru-             work based on SVM with feature augmentation,” Knowl. Based Syst.,
+     sion detection through convolutional neural networks,” Knowl. Based                vol. 139, pp. 130–139, Nov. 2017.
+     Syst., vol. 216, Mar. 2021, Art. no. 106798.                                  [38] Q. Qin, K. Poularakis, K. K. Leung, and L. Tassiulas, “Line-speed and
+[15] Y. Cheng, J. Lu, D. Niyato, B. Lyu, J. Kang, and S. Zhu, “Federated                scalable intrusion detection at the network edge via federated learning,”
+     transfer learning with client selection for intrusion detection in mobile          in Proc. IFIP Netw. Conf., Paris, France, Jun. 2020, pp. 352–360.
+     edge computing,” IEEE Commun. Lett., vol. 26, no. 3, pp. 552–556,             [39] Y. Meidan et al., “N-BaIoT: Network-based detection of IoT botnet
+     Mar. 2022, doi: 10.1109/LCOMM.2022.3140273.                                        attacks using deep autoencoders,” IEEE Pervasive Comput., vol. 17,
+[16] J. Kang, Z. Xiong, D. Niyato, S. Xie, and J. Zhang, “Incentive mech-               no. 3, pp. 12–22, Jul.–Sep. 2018.
+     anism for reliable federated learning: A joint optimization approach
+     to combining reputation and contract theory,” IEEE Internet Things J.,
+     vol. 6, no. 6, pp. 10700–10714, Dec. 2019.
+[17] S. I. Popoola, R. Ande, B. Adebisi, G. Gui, M. Hammoudeh, and
+     O. Jogunola, “Federated deep learning for zero-day botnet attack detec-
+     tion in IoT edge devices,” IEEE Internet Things J., vol. 9, no. 5,
+     pp. 3930–3944, Mar. 2022, doi: 10.1109/JIOT.2021.3100755.
+[18] N. A. A.-A. Al-Marri, B. S. Ciftler, and M. Abdallah, “Federated
+     MIMIC learning for privacy preserving intrusion detection,” in Proc.
+     BlackSeaCom, Odessa, Ukraine, May 2020, pp. 1–6.                                                        Ruijie Zhao (Graduate Student Member, IEEE)
+[19] X. Hei, X. Yin, Y. Wang, J. Ren, and L. Zhu, “A trusted feature                                         received the M.S. degree from Shanghai Jiao Tong
+     aggregator federated learning for distributed malicious attack detection,”                              University, Shanghai, China, in 2021, where he
+     Comput. Security, vol. 99, Dec. 2020, Art. no. 102033.                                                  is currently pursuing the Ph.D. degree with the
+[20] Z. Zhang et al., “Robust semi-supervised federated learning for images                                  School of Electronic Information and Electrical
+     automatic recognition in Internet of Drones,” IEEE Internet Things J.,                                  Engineering.
+     early access, Feb. 16, 2022, doi: 10.1109/JIOT.2022.3151945.                                               His research interests include machine learning,
+[21] K. Yang, T. Jiang, Y. Shi, and Z. Ding, “Federated learning via over-                                   network security, and Internet of Things.
+     the-air computation,” IEEE Trans. Wireless Commun., vol. 19, no. 3,
+     pp. 2022–2035, Mar. 2020.
+
+       Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+ZHAO et al.: SEMISUPERVISED FEDERATED-LEARNING-BASED INTRUSION DETECTION METHOD                                                                              8657
+
+
+
+                         Yijun Wang received the B.S. and M.S. degrees                                     Bamidele Adebisi (Senior Member, IEEE) received
+                         from Shanghai Jiao Tong University, Shanghai,                                     the bachelor’s degree in electrical engineering
+                         China, in 2001 and 2004, respectively.                                            from Ahmadu Bello University, Zaria, Nigeria,
+                            He is currently an Engineer with the School                                    in 1999, and the master’s degree in advanced
+                         of Electronic Information and and Electrical                                      mobile communication engineering and the Ph.D.
+                         Engineering, Shanghai Jiao Tong University. His                                   degree in communication systems from Lancaster
+                         research interests include system security, network                               University, Lancaster, U.K., in 2003 and 2009,
+                         security, and machine learning.                                                   respectively.
+                                                                                                              He was a Senior Research Associate with
+                                                                                                           the School of Computing and Communication,
+                                                                                                           Lancaster University from 2005 to 2012. He joined
+                                                                                 the Manchester Metropolitan University, Manchester, U.K., in 2012, where
+                                                                                 he is currently a Full Professor (Chair) of Intelligent Infrastructure Systems.
+                                                                                 He has published over 140 peer-review papers and given several talks/panel
+                                                                                 discussions in the research areas of Internet of Things, smart cities, smart
+                         Zhi Xue received the B.S. and Ph.D. degrees from        grids, communication systems, and cyber physical systems.
+                         Shanghai Jiao Tong University, Shanghai, China, in         Prof. Adebisi received the 2020 U.K. Best Knowledge Transfer Partnership
+                         1992 and 2001, respectively.                            Project of the Year Awards for one of his projects with an SME. He is
+                            He is currently a Professor with the School of       currently the Vice Chair of IEEE TC-PLC, and was the General Chair of
+                         Electronic Information and Electrical Engineering,      IEEE ISPLC’18, U.K., and the Co-Chair of the 6th IEEE Int’l Conference on
+                         Shanghai Jiao Tong University. His research interests   Smart Grid Communications, Miami, U.S., in 2015. He is a Panel Member of
+                         include machine learning, network security, and data    the U.K. Engineering and Physical Sciences Research Council Peer Review
+                         science.                                                College, and an EU H2020 Expert Reviewer/Rapporteur. He has been part of
+                                                                                 multipartner, multicountry, multimillion pounds projects as PI and Co-I. He is
+                                                                                 a Fellow of IET, and Higher Education Academy, and a Chartered Engineer.
+
+
+
+
+                                                                                                           Guan Gui (Senior Member, IEEE) was born
+                                                                                                           in Zongyang county, Anhui, China, in 1982. He
+                                                                                                           received the Ph.D. degree from the University
+                                                                                                           of Electronic Science and Technology of China,
+                                                                                                           Chengdu, China, in 2012.
+                                                                                                              From 2009 to 2014, he joined the Tohoku
+                         Tomoaki Ohtsuki (Senior Member, IEEE) received                                    University, Sendai, Japan, as a Research Assistant as
+                         the B.E., M.E., and Ph.D. degrees in electrical engi-                             well as a Postdoctoral Research Fellow. From 2014
+                         neering from Keio University, Yokohama, Japan, in                                 to 2015, he was an Assistant Professor with Akita
+                         1990, 1992, and 1994, respectively.                                               Prefectural University, Akita, Japan. Since 2015, he
+                            From 1994 to 1995, he was a Postdoctoral Fellow                                has been a Professor with Nanjing University of
+                         and a Visiting Researcher of Electrical Engineering     Posts and Telecommunications, Nanjing, China. He has published more than
+                         with Keio University. From 1993 to 1995, he was         200 IEEE journal/conference papers and won several best paper awards, e.g.,
+                         a Special Researcher of Fellowships of the Japan        ICC 2017, ICC 2014, and VTC 2014-Spring. His recent research interests
+                         Society for the Promotion of Science for Japanese       include intelligence sensing and recognition, intelligent signal processing, and
+                         Junior Scientists. From 1995 to 2005, he was with       physical layer security.
+                         Science University of Tokyo, Tokyo, Japan. In 2005,        Dr. Gui received the IEEE Communications Society Heinrich Hertz Award
+he joined Keio University, where he is currently a Professor. From 1998 to       in 2021, the Top 2% Scientists of the World by Stanford University in
+1999, he was with the Department of Electrical Engineering and Computer          2021, the Clarivate Analytics Highly Cited Researcher in Cross-Field in
+Sciences, University of California at Berkeley, Berkeley, CA, USA. He is         2021, the Highly Cited Chinese Researchers by Elsevier in 2020 and 2021,
+engaged in research on wireless communications, optical communications,          the Member and Global Activities Contributions Award in 2018, the Top
+signal processing, and information theory. He has published more than 205        Editor Award of IEEE Transactions on Vehicular Technology in 2019, the
+journal papers and 415 international conference papers.                          Outstanding Journal Service Award of KSII Transactions on Internet and
+   Dr. Ohtsuki is a recipient of the 1997 Inoue Research Award for Young         Information System in 2020, the Exemplary Reviewer Award of IEEE
+Scientist, the 1997 Hiroshi Ando Memorial Young Engineering Award, the           C OMMUNICATIONS L ETTERS in 2017, the 2012 Japan Society for Promotion
+Ericsson Young Scientist Award 2000, the 2002 Funai Information and              of Science (JSPS) Postdoctoral Fellowships for Foreign Researchers, and
+Science Award for Young Scientist, the IEEE the 1st Asia–Pacific Young           the 2018 JSPS International Fellowships for Overseas Researchers. He was
+Researcher Award 2001, the 5th International Communication Foundation            also selected as the Jiangsu Specially Appointed Professor in 2016, the
+Research Award, the 2011 IEEE SPCE Outstanding Service Award, the                Jiangsu High-level Innovation and Entrepreneurial Talent in 2016, and the
+27th TELECOM System Technology Award, the ETRI Journal’s 2012 Best               Jiangsu Six Top Talent in 2018. Since 2022, he has been a Distinguished
+Reviewer Award, and the 9th International Conference on Communications           Lecturer of the IEEE Vehicular Technology Society. He is a member of
+and Networking in China 2014 Best Paper Award. He served as the Chair of         the IEEE Communications Society and the IEEE Vehicular Technology
+IEEE Communications Society, and Signal Processing for Communications            Society. He is serving or served on the editorial boards of several jour-
+and Electronics Technical Committee. He served as a Technical Editor of          nals, including IEEE T RANSACTIONS ON V EHICULAR T ECHNOLOGY,
+the IEEE Wireless Communications Magazine and an Editor of Physical              IEICE Transactions on Communications, Physical Communication, Wireless
+Communications (Elsevier). He is currently serving as an Area Editor of          Networks, IEEE ACCESS, Journal of Circuits Systems and Computers,
+the IEEE T RANSACTIONS ON V EHICULAR T ECHNOLOGY and an Editor                   Security and Communication Networks, IEICE Communications Express,
+of the IEEE C OMMUNICATIONS S URVEYS AND T UTORIALS. He has served               KSII Transactions on Internet and Information Systems, and Journal on
+as the General Co-Chair, Symposium Co-Chair, and TPC Co-Chair of many            Communications. In addition, he served as the IEEE VTS Ad Hoc Committee
+conferences, including IEEE GLOBECOM 2008, SPC, IEEE ICC 2011, CTS,              Member in AI Wireless, the TPC Chair of PRAI 2022, ICGIP 2022, PHM
+IEEE GLOBECOM 2012, SPC, IEEE ICC 2020, SPC, IEEE APWCS, IEEE                    2021, and WiMob 2020, the Executive Chair of VTC 2021-Fall, the Vice Chair
+SPAWC, and IEEE VTC. He gave tutorials and keynote speeches at many              of WCNC 2021, the Symposium Chair of WCSP 2021, the General Co-Chair
+international conferences, including IEEE VTC, IEEE PIMRC, and IEEE              of Mobimedia 2020, the Track Chair of EuCNC 2021 and 2022 and VTC
+WCNC. He was the Vice President and the President of the Communications          2020 Spring, the Award Chair of PIMRC 2019, and the TPC Member of
+Society of IEICE. He is a Distinguished Lecturer of IEEE, a Fellow of IEICE,     many IEEE international conferences, including GLOBECOM, ICC, WCNC,
+and a member of the Engineering Academy of Japan.                                PIRMC, VTC, and SPAWC.
+
+
+
+     Authorized licensed use limited to: Bahcesehir Kibris University. Downloaded on January 01,2026 at 12:53:29 UTC from IEEE Xplore. Restrictions apply.
+

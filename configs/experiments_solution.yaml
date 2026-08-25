@@ -1,0 +1,16 @@
+# Stage 1: evaluate the proposed SSFL solution with the canonical CNN backbone in all three
+# paper scenarios. Entry names and configurations intentionally match configs/experiments.yaml,
+# allowing the full comparison matrix to be launched later with --resume.
+
+entries:
+  - name: ssfl_cnn_s1
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: cnn, scenario: 1}
+
+  - name: ssfl_cnn_s2
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: cnn, scenario: 2}
+
+  - name: ssfl_cnn_s3
+    base_profile: paper
+    overrides: {algorithm: ssfl, backbone: cnn, scenario: 3}

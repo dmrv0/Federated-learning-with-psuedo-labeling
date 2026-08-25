@@ -1,0 +1,15 @@
+# Multi-seed robustness sweep referenced by configs/robustness.yaml's own docstring ("run once per
+# seed in {2023, 2024, 2025} by run_suite.py"). run_kind stays extension (inherited from
+# robustness.yaml) so these three runs are never mistaken for the single-seed canonical paper
+# numbers; reporting (M8) computes mean +/- std across the three run directories below.
+
+entries:
+  - name: robustness_seed_2023
+    base_profile: robustness
+    overrides: {seed: 2023}
+  - name: robustness_seed_2024
+    base_profile: robustness
+    overrides: {seed: 2024}
+  - name: robustness_seed_2025
+    base_profile: robustness
+    overrides: {seed: 2025}

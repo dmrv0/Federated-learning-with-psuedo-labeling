@@ -1,0 +1,19 @@
+# Tiny CPU-smoke subset of configs/experiments.yaml's ablation/threshold/label studies, per
+# SSFL_IMPLEMENTATION_PLAN.md's verification step: "run_suite over a smoke experiments.yaml
+# (1 ablation + 1 threshold + 1 label variant) completes + --resume works". Base profile is
+# `smoke` (2 rounds, tiny batch, CPU) so this exercises run_suite.py's matrix/resume logic itself
+# without paying paper-scale training cost.
+
+entries:
+  - name: smoke_ablation_no_discriminator
+    base_profile: smoke
+    overrides: {ssfl_discriminator_mode: disabled}
+  - name: smoke_threshold_0_8
+    base_profile: smoke
+    overrides: {ssfl_threshold_policy: fixed_0_8}
+  - name: smoke_label_soft_4dp
+    base_profile: smoke
+    overrides:
+      ssfl_voting_mode: disabled
+      ssfl_label_representation: soft
+      ssfl_soft_label_round_decimals: 4
